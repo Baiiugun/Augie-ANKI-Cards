@@ -2,23 +2,292 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Augie-ANKI-Cards（测试版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Augie-ANKI-Cards 背词（测试版）</title>
 <style>
-  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fffbe6;color:#333}
-  .bar{background:#ff9800;color:#fff;text-align:center;padding:8px 12px;font-weight:700}
-  main{max-width:520px;margin:48px auto;padding:0 20px;text-align:center}
-  h1{font-size:22px}
-  p{line-height:1.7;color:#555}
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#222;--mute:#8a8f98;--line:#e3e6ea;--new:#1e6fff;--learn:#e03131;--rev:#2b9a4a;--warn:#ff9800}
+  @media (prefers-color-scheme:dark){:root{--bg:#15171a;--card:#1f2226;--ink:#e8e8e8;--mute:#8d939c;--line:#31353b;--new:#5b9bff;--learn:#ff6b6b;--rev:#51cf66}}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+  #banner{background:var(--warn);color:#fff;text-align:center;padding:6px 10px;font-weight:700;font-size:14px;position:sticky;top:0;z-index:5}
+  #app{max-width:640px;margin:0 auto;padding:12px 14px calc(24px + env(safe-area-inset-bottom))}
+  h1{font-size:20px;margin:14px 0 4px}
+  .sub{color:var(--mute);font-size:14px;margin-bottom:12px}
+  .deck{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .deck:active{opacity:.7}
+  .deck .name{flex:1;font-size:17px;font-weight:600}
+  .deck .name small{display:block;font-weight:400;color:var(--mute);font-size:12px;margin-top:2px}
+  .num{min-width:38px;text-align:center;font-size:18px;font-weight:700}
+  .num i{display:block;font-style:normal;font-size:11px;font-weight:400;color:var(--mute)}
+  .n-new{color:var(--new)}.n-learn{color:var(--learn)}.n-rev{color:var(--rev)}.zero{opacity:.3}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px;-webkit-tap-highlight-color:transparent}
+  .btn{background:var(--new);color:#fff;padding:14px 20px;font-size:17px;font-weight:600;width:100%}
+  .btn.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
+  .top{display:flex;align-items:center;gap:8px;margin:4px 0 8px}
+  .top .back{background:transparent;color:var(--mute);font-size:15px;padding:8px}
+  .top .cnt{flex:1;text-align:center;font-size:20px;font-weight:700;letter-spacing:1px}
+  .cnt span{padding:0 8px}.cnt .cur{text-decoration:underline;text-underline-offset:5px}
+  .top .undo{background:transparent;color:var(--mute);font-size:15px;padding:8px}
+  .top .undo:disabled{opacity:.3}
+  #cardbox{background:#fff;color:#000;border:1px solid var(--line);border-radius:14px;min-height:42vh;padding:10px;overflow:auto}
+  #foot{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 22%);padding:14px 0 calc(8px + env(safe-area-inset-bottom))}
+  .ans{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ans button{padding:10px 2px;color:#fff;font-weight:700;font-size:16px;line-height:1.25}
+  .ans button small{display:block;font-weight:400;font-size:12px;opacity:.9}
+  .a1{background:#e03131}.a2{background:#f08c00}.a3{background:#2b9a4a}.a4{background:#1e6fff}
+  .center{text-align:center;padding:40px 10px}
+  .big{font-size:56px}
+  .sync{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mute);background:var(--card);padding:2px 8px;border-radius:8px;border:1px solid var(--line)}
+  .sync.bad{color:#fff;background:var(--learn);border-color:var(--learn)}
+  input.code{width:100%;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);letter-spacing:2px;text-transform:uppercase}
+  .err{color:var(--learn);margin:10px 0}
 </style>
 </head>
 <body>
-<div class="bar">⚠️ 临时测试系统 · 测试版</div>
-<main>
-  <h1>Augie-ANKI-Cards</h1>
-  <p>背词页面正在建设中，还不能使用。</p>
-  <p>做好后，这个地址会直接变成背词页面。</p>
-</main>
+<div id="banner">⚠️ 临时测试系统 · 测试版</div>
+<div id="app"><div class="center">加载中…</div></div>
+<div id="sync" class="sync" hidden></div>
+
+<script type="module">
+import { createApi, createMockApi, stateOf } from './lib/api.js';
+import { mediaBase } from './lib/config.js';
+import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
+
+const $ = (s) => document.querySelector(s);
+const app = $('#app');
+const params = new URLSearchParams(location.search);
+const MOCK = params.get('mock') === '1';
+
+// ---------- 学习码：从链接 #k=… 取，存本机，然后把地址栏清干净 ----------
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 忽略 */ } };
+const normCode = (s) => (s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+let code = '';
+{
+  const m = location.hash.match(/k=([^&]+)/);
+  if (m) { code = normCode(decodeURIComponent(m[1])); if (code.length === 16) lsSet('anki_test_code', code); history.replaceState(null, '', location.pathname + location.search); }
+  if (!code) code = normCode(lsGet('anki_test_code'));
+}
+
+// ---------- 全局状态 ----------
+const S = { api: null, learner: null, skew: 0, cards: new Map(), bySlug: new Map(), log: [], manifest: null, content: {}, cache: {},
+            pending: [], flushing: false, session: null, undoInfo: null };
+const now = () => Date.now() + S.skew;
+const BASE_CSS = `.card{font-family:-apple-system,"PingFang SC",arial,sans-serif;font-size:22px;text-align:center;color:#000;background:#fff}
+  hr#answer{border:0;border-top:1px solid #ddd;margin:14px 0}.snd-btn{display:inline-block;width:38px;height:38px;line-height:38px;border-radius:50%;background:#e8f0ff;color:#1e6fff;text-decoration:none;text-align:center;font-size:16px;margin:2px}
+  img{max-width:100%;height:auto}video{max-width:100%}`;
+
+// ---------- 加载 ----------
+async function boot() {
+  try {
+    const man = await (await fetch('data/manifest.json?v=' + Date.now())).json();
+    S.manifest = man;
+    await Promise.all(man.packages.map(async (p) => { S.content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${man.generated}`)).json(); }));
+    for (const p of man.packages) { S.cache[p.slug] = new Map(S.content[p.slug].cards.map((c) => [c.k, c])); }
+    if (MOCK) S.api = createMockApi(man, S.content);
+    else {
+      if (code.length !== 16) return showCodeInput();
+      S.api = createApi(code);
+    }
+    try { S.pending = JSON.parse(lsGet('anki_test_pending') || '[]'); } catch (e) { S.pending = []; }
+    if (S.pending.length) await flush();      // 上次没来得及保存的答案，先发出去再取最新进度
+    await refresh();
+    showHome();
+  } catch (e) { showError(e); }
+}
+
+async function refresh() {
+  const r = await S.api.getState();
+  S.learner = r.learner; S.skew = r.nowMs - Date.now(); S.log = r.todayLog.map((x) => ({ key: x[0], prev_type: x[1], type: x[2] }));
+  S.cards = new Map(r.cards.map((c) => [c.key, c]));
+  S.bySlug = new Map(S.manifest.packages.map((p) => [p.slug, []]));
+  for (const c of S.cards.values()) S.bySlug.get(c.key.split(':')[0])?.push(c);
+}
+
+function showError(e) {
+  const bad = e.message === 'invalid code' || e.message === 'bad code';
+  app.innerHTML = `<div class="center"><div class="big">😕</div><h1>${bad ? '学习码不对或已失效' : '打不开'}</h1>
+    <p class="err">${bad ? '请让爸爸重新发一次链接。' : '网络可能不好，或数据库还没准备好。'}<br><small>${String(e.message).replace(/</g, '&lt;')}</small></p>
+    <button class="btn" onclick="location.reload()">重试</button>${bad ? '<p><button class="btn ghost" id="rc">输入学习码</button></p>' : ''}</div>`;
+  $('#rc')?.addEventListener('click', showCodeInput);
+}
+function showCodeInput() {
+  app.innerHTML = `<h1>请输入学习码</h1><p class="sub">爸爸发给你的 16 位学习码（或直接点爸爸发的链接）。</p>
+    <input class="code" id="ci" maxlength="24" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters"><p></p><button class="btn" id="cb">进入</button>`;
+  $('#cb').onclick = () => { const c = normCode($('#ci').value); if (c.length !== 16) { alert('学习码是 16 位字母和数字'); return; } lsSet('anki_test_code', c); location.hash = ''; location.reload(); };
+}
+
+// ---------- 今天的计数（按"包"分别算，同 Anki 按牌组算上限） ----------
+function todayCounts(slug) {
+  const mine = S.log.filter((l) => l.key.startsWith(slug + ':'));
+  return { newDone: new Set(mine.filter((l) => l.prev_type === 0).map((l) => l.key)).size, revDone: mine.filter((l) => l.type === 1).length };
+}
+function queueFor(slugs) {
+  const lim = { newPerDay: S.learner.new_per_day, revPerDay: S.learner.rev_per_day };
+  const q = { learnDue: [], learnAhead: [], interday: [], reviews: [], news: [] };
+  for (const s of slugs) {
+    const b = buildQueue(S.bySlug.get(s) || [], now(), todayCounts(s), lim);
+    for (const k of Object.keys(q)) q[k].push(...b[k]);
+  }
+  q.learnDue.sort((a, b) => a.due - b.due);
+  return q;
+}
+const qCounts = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.length + q.learnAhead.length, r: q.reviews.length });
+
+// ---------- 首页：包列表 ----------
+function showHome() {
+  S.session = null; stopAudio();
+  const tot = queueFor(S.manifest.packages.map((p) => p.slug)), t = qCounts(tot);
+  const row = (slug, name, sub, c) => `<div class="deck" data-slug="${slug}">
+      <div class="name">${name}<small>${sub}</small></div>
+      <div class="num n-new ${c.n ? '' : 'zero'}">${c.n}<i>新</i></div><div class="num n-learn ${c.l ? '' : 'zero'}">${c.l}<i>学习中</i></div><div class="num n-rev ${c.r ? '' : 'zero'}">${c.r}<i>复习</i></div></div>`;
+  let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">每个包每天最多新卡 ${S.learner.new_per_day} 张、复习 ${S.learner.rev_per_day} 张（和 Anki 一样）</div>`;
+  html += row('', '全部', '所有包一起学', t);
+  for (const p of S.manifest.packages) {
+    const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length;
+    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 挂起 ${sus}` : ''}`, qCounts(queueFor([p.slug])));
+  }
+  if (MOCK) html += `<p class="sub">离线演示模式：进度只存在这台设备上。<a href="#" id="rs">清空演示进度</a></p>`;
+  app.innerHTML = html;
+  app.querySelectorAll('.deck').forEach((d) => d.onclick = () => startStudy(d.dataset.slug));
+  $('#rs')?.addEventListener('click', (e) => { e.preventDefault(); S.api.reset(); location.reload(); });
+}
+
+// ---------- 背诵 ----------
+let host = null, player = null, playToken = 0;
+function stopAudio() { playToken++; if (player) { try { player.pause(); } catch (e) { /* 忽略 */ } } host?.shadowRoot?.querySelectorAll('video').forEach((v) => { try { v.pause(); } catch (e) { /* 忽略 */ } }); }
+
+function startStudy(slug) {
+  // 第一次点击里"解锁"音频（iPad/Safari 必须由用户点击才允许发声）
+  if (!player) { player = new Audio(); player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; player.play().catch(() => {}); }
+  const slugs = slug ? [slug] : S.manifest.packages.map((p) => p.slug);
+  S.session = { slugs, shownNew: 0, shownRev: 0, cur: null, showing: 'q', t0: 0 };
+  app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" id="cnt"></div><button class="undo" id="undo" disabled>撤销</button></div>
+    <div id="cardbox"></div><div id="foot"></div>`;
+  host = $('#cardbox'); host.attachShadow({ mode: 'open' });
+  $('#back').onclick = () => { stopAudio(); showHome(); };
+  $('#undo').onclick = doUndo;
+  nextStep();
+}
+
+function nextStep() {
+  const ss = S.session, q = queueFor(ss.slugs), c = nextCard(q, ss.shownNew, ss.shownRev);
+  renderCounts(q, c);
+  if (!c) return showDone(q);
+  ss.cur = c; ss.showing = 'q'; ss.t0 = Date.now();
+  renderSide('q');
+  $('#foot').innerHTML = `<button class="btn" id="show">显示答案</button>`;
+  $('#show').onclick = showAnswer;
+}
+function renderCounts(q, c) {
+  const k = qCounts(q); const cls = !c ? '' : c.queue === 0 ? 'n' : (c.queue === 2 ? 'r' : 'l');
+  $('#cnt').innerHTML = `<span class="n-new ${cls === 'n' ? 'cur' : ''}">${k.n}</span><span class="n-learn ${cls === 'l' ? 'cur' : ''}">${k.l}</span><span class="n-rev ${cls === 'r' ? 'cur' : ''}">${k.r}</span>`;
+}
+function fixHtml(html, slug) {
+  const base = mediaBase(slug);
+  return html
+    .replace(/<a class="snd-btn" href="#" data-side="(q|a)" data-src="([^"]+\.mp4)">[^<]*<\/a>/g, (m, side, src) => `<video class="vid" data-side="${side}" controls playsinline preload="metadata" src="${src}"></video>`)
+    .replace(/(src|data-src)="\/media\//g, `$1="${base}`);
+}
+function renderSide(side) {
+  const c = S.session.cur, slug = c.key.split(':')[0], ct = S.cache[slug].get(c.key), model = S.content[slug].models[ct.m];
+  const html = fixHtml(side === 'q' ? ct.f : ct.b, slug);
+  host.shadowRoot.innerHTML = `<style>${BASE_CSS}${model.css}</style><div class="card">${html}</div>`;
+  host.shadowRoot.querySelectorAll('.snd-btn').forEach((b) => b.onclick = (e) => { e.preventDefault(); playList([b.dataset.src]); });
+  const sel = side === 'q' ? '[data-side="q"]' : '[data-side="a"]';
+  const items = [...host.shadowRoot.querySelectorAll(`.snd-btn${sel}, video${sel}`)];
+  autoplay(items);
+  if (side === 'a') host.shadowRoot.querySelector('hr#answer')?.scrollIntoView({ block: 'start' });
+  else host.scrollTop = 0;
+}
+function autoplay(items) {
+  stopAudio();
+  const vid = items.find((i) => i.tagName === 'VIDEO');
+  if (vid) { vid.play().catch(() => {}); return; }
+  const urls = items.map((i) => i.dataset.src);
+  if (urls.length) playList(urls);
+}
+function playList(urls) {
+  const my = ++playToken; let i = 0;
+  const step = () => { if (my !== playToken || i >= urls.length) return; player.src = urls[i++]; player.onended = step; player.onerror = step; player.play().catch(() => {}); };
+  step();
+}
+
+function showAnswer() {
+  const ss = S.session, c = ss.cur; ss.showing = 'a';
+  renderSide('a');
+  const pv = previewIntervals(c, now());
+  const lab = ['重来', '难', '好', '简单'];
+  $('#foot').innerHTML = `<div class="ans">${[1, 2, 3, 4].map((e) => `<button class="a${e}" data-e="${e}"><small>${formatDelay(pv[e - 1])}</small>${lab[e - 1]}</button>`).join('')}</div>`;
+  $('#foot').querySelectorAll('button').forEach((b) => b.onclick = () => onAnswer(+b.dataset.e));
+}
+
+function onAnswer(ease) {
+  const ss = S.session, c = ss.cur;
+  const prev = { ...c };
+  const { card, log } = answer(c, ease, now(), CFG);
+  const uid = (crypto.randomUUID ? crypto.randomUUID() : 'u' + Date.now() + Math.random().toString(16).slice(2));
+  log.uid = uid; log.time_ms = Math.min(Date.now() - ss.t0, 60000);
+  if (c.queue === 0) ss.shownNew++; else if (c.queue === 2) ss.shownRev++;
+  Object.assign(c, card);
+  S.log.push({ key: c.key, prev_type: log.prev_type, type: log.type });
+  S.undoInfo = { key: c.key, prev, uid, ease };
+  enqueue({ kind: 'answer', key: c.key, state: stateOf(c), log });
+  $('#undo').disabled = false;
+  nextStep();
+}
+function doUndo() {
+  const u = S.undoInfo; if (!u) return;
+  const c = S.cards.get(u.key); Object.assign(c, u.prev);
+  const i = S.log.map((l) => l.key).lastIndexOf(u.key); if (i >= 0) S.log.splice(i, 1);
+  if (u.prev.queue === 0) S.session.shownNew = Math.max(S.session.shownNew - 1, 0); else if (u.prev.queue === 2) S.session.shownRev = Math.max(S.session.shownRev - 1, 0);
+  enqueue({ kind: 'undo', key: u.key, prev: u.prev, uid: u.uid });
+  S.undoInfo = null; $('#undo').disabled = true;
+  const ss = S.session, q = queueFor(ss.slugs);
+  ss.cur = c; ss.showing = 'q'; ss.t0 = Date.now();
+  renderCounts(q, c); renderSide('q');
+  $('#foot').innerHTML = `<button class="btn" id="show">显示答案</button>`; $('#show').onclick = showAnswer;
+}
+function showDone(q) {
+  stopAudio();
+  const nxt = [...(S.bySlug.values())].flat().filter((c) => !c.suspended && c.queue === 1).sort((a, b) => a.due - b.due)[0];
+  const wait = nxt ? Math.max(Math.ceil((nxt.due - now() / 1000) / 60), 1) : 0;
+  $('#cardbox').outerHTML = `<div class="center"><div class="big">🎉</div><h1>今天学完啦</h1><p class="sub">${wait ? `还有一张卡约 ${wait} 分钟后再出现。` : '真棒！明天再来。'}</p></div>`;
+  $('#foot').innerHTML = `<button class="btn" id="home">返回</button>`; $('#home').onclick = showHome;
+}
+
+// ---------- 把答案存回云端（失败会自动重试，重复提交只算一次） ----------
+function enqueue(job) { S.pending.push(job); try { lsSet('anki_test_pending', JSON.stringify(S.pending)); } catch (e) { /* 忽略 */ } flush(); }
+async function flush() {
+  if (S.flushing) return; S.flushing = true; setSync();
+  while (S.pending.length) {
+    const j = S.pending[0];
+    try {
+      if (j.kind === 'answer') await S.api.answer(j.key, j.state, j.log); else await S.api.undo(j.key, j.prev, j.uid);
+      S.pending.shift(); lsSet('anki_test_pending', JSON.stringify(S.pending)); setSync();
+    } catch (e) {
+      if (e.status && e.status < 500 && e.status !== 408 && e.status !== 429) { console.warn('丢弃无法保存的记录', j, e); S.pending.shift(); continue; }
+      setSync(true); S.flushing = false; setTimeout(flush, 8000); return;
+    }
+  }
+  S.flushing = false; setSync();
+}
+function setSync(bad) {
+  const el = $('#sync'); const n = S.pending.length;
+  el.hidden = !n && !bad; el.className = 'sync' + (bad ? ' bad' : ''); el.textContent = bad ? `网络不稳，${n} 条待保存（会自动重试）` : `正在保存 ${n}…`;
+}
+window.addEventListener('beforeunload', (e) => { if (S.pending.length) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---------- 电脑键盘（和 Anki 一样：空格/回车显示答案，1-4 作答，z 撤销） ----------
+document.addEventListener('keydown', (e) => {
+  const ss = S.session; if (!ss || !ss.cur || e.target.tagName === 'INPUT') return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (ss.showing === 'q') showAnswer(); else onAnswer(3); }
+  else if (['1', '2', '3', '4'].includes(e.key) && ss.showing === 'a') onAnswer(+e.key);
+  else if (e.key === 'z') doUndo();
+});
+
+boot();
+</script>
 </body>
 </html>

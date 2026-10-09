@@ -10,8 +10,21 @@
 
 ## 公网地址
 
-- 背词页面（Augie 用）：**尚未上线**（计划地址：https://baiiugun.github.io/Augie-ANKI-Cards/ ，启用 GitHub Pages 后生效）
-- 老师页面：**尚未上线**（计划文件名：`Augie-Anki测试-老师登录版本.html`）
+- 背词页面（Augie 用，需要带学习码的链接才能进）：https://baiiugun.github.io/Augie-ANKI-Cards/
+- 老师页面（登录后用）：https://baiiugun.github.io/Augie-ANKI-Cards/Augie-Anki测试-老师登录版本.html
+- 状态：**测试中**。背词页和老师页都已发布，但数据库那一步（`04-Augie-Anki测试系统-建表.sql`）要由老师在 Supabase 里运行后才能真正使用。
+
+## 目录
+
+| 路径 | 内容 |
+|---|---|
+| `index.html` | 学生背词页（`?mock=1` 是不联网的演示模式） |
+| `Augie-Anki测试-老师登录版本.html` | 老师页：学生链接、每天学习量、各包进度、放出挂起的新卡 |
+| `lib/anki-sched.js` | Anki 旧调度（SM-2）的复刻，参数 = Augie 的 Anki 默认预设 |
+| `lib/api.js`、`lib/config.js` | 和 Supabase 通话、公开配置（anon 公开密钥） |
+| `data/` | 卡片文字内容（`manifest.json` + 每个包一个 json），**不含进度** |
+| `tools/` | 导入程序：`build-content.mjs` 拆 .apkg，`upload.mjs` 上传媒体并导入进度（在老师电脑上运行） |
+| `test/` | 用真实 Anki 答题记录检验调度规则的脚本 |
 
 ## 这个仓库里放什么、不放什么
 
@@ -33,4 +46,4 @@
 ## 状态
 
 方案与搭建记录见作者本机项目文件夹「云端单词背诵系统」里的 `操作记录-Augie-Anki测试系统.md`。
-当前阶段：仓库刚建好，页面和数据库都还没有。
+当前阶段：页面和导入程序已做好；数据库待运行建表 SQL，然后导入 Augie 的进度。

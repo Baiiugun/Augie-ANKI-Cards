@@ -1,0 +1,48 @@
+{
+ "generated": "2026-10-09T10:40:49.325Z",
+ "note": "【临时测试系统】卡片文字内容；进度不在这里",
+ "packages": [
+  {
+   "slug": "alphabet",
+   "name": "01-26个英文字母_听音写字",
+   "version": "20261009",
+   "count": 26,
+   "media": 52
+  },
+  {
+   "slug": "super-why",
+   "name": "Super_WHY",
+   "version": "20261009",
+   "count": 35,
+   "media": 106
+  },
+  {
+   "slug": "pinyin-learn",
+   "name": "拼音学习-看汉字写拼音",
+   "version": "20261009",
+   "count": 367,
+   "media": 451
+  },
+  {
+   "slug": "pinyin-confuse",
+   "name": "拼音混淆",
+   "version": "20261009",
+   "count": 33,
+   "media": 61
+  },
+  {
+   "slug": "hanzi-learn",
+   "name": "汉字学习",
+   "version": "20261009",
+   "count": 1259,
+   "media": 3758
+  },
+  {
+   "slug": "hanzi-confuse",
+   "name": "汉字混淆",
+   "version": "20261009",
+   "count": 116,
+   "media": 139
+  }
+ ]
+}
