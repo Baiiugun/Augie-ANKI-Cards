@@ -28,33 +28,44 @@ console.log(`准备：${states.length} 个包，${nCards} 张卡的进度，${nL
 if (DRY) { console.log('--dry：到此为止，没有联网。'); process.exit(0); }
 
 // ---- 隐藏输入密码 ----
+// 空输入不算（防止终端里残留的回车直接提交空密码）；方向键等控制序列忽略；输完回显“已收到 N 个字符”（不显示内容）。
 function askHidden(prompt) {
   return new Promise((resolve) => {
     process.stdout.write(prompt);
     const stdin = process.stdin; let buf = '';
     stdin.setRawMode?.(true); stdin.resume(); stdin.setEncoding('utf8');
-    const on = (ch) => {
-      for (const c of ch) {
-        if (c === '\r' || c === '\n') { stdin.setRawMode?.(false); stdin.pause(); stdin.off('data', on); process.stdout.write('\n'); return resolve(buf); }
-        if (c === '\u0003') process.exit(1);
-        if (c === '\u007f' || c === '\b') buf = buf.slice(0, -1); else buf += c;
+    const on = (chunk) => {
+      const text = chunk.replace(/\x1b\[[0-9;]*[A-Za-z~]/g, '').replace(/\x1b./g, '');
+      for (const c of text) {
+        if (c === '\r' || c === '\n') {
+          if (!buf) continue;
+          stdin.off('data', on); stdin.setRawMode?.(false); stdin.pause();
+          process.stdout.write(`\n（已收到 ${[...buf].length} 个字符）\n`);
+          return resolve(buf);
+        }
+        if (c === '\x03') { process.stdout.write('\n已取消\n'); stdin.setRawMode?.(false); stdin.pause(); process.exitCode = 1; setTimeout(() => process.exit(1), 80); return; }
+        if (c === '\x7f' || c === '\b') buf = buf.slice(0, -1); else if (c >= ' ') buf += c;
       }
     };
     stdin.on('data', on);
   });
 }
+const bye = (code) => { process.exitCode = code; setTimeout(() => process.exit(code), 80); return new Promise(() => {}); }; // 稍等再退出，避免 Windows 上的 libuv 报错
 
 async function api(method, p, { token, body, headers = {} } = {}) {
   return fetch(SUPABASE_URL + p, { method, headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + (token || ANON_KEY), ...headers }, body });
 }
 const jsonHdr = { 'Content-Type': 'application/json' };
 
-// ---- 1. 登录 ----
-const password = await askHidden(`老师邮箱 ${TEACHER_EMAIL}\n请输入老师密码（输入时不显示）：`);
-let r = await api('POST', '/auth/v1/token?grant_type=password', { body: JSON.stringify({ email: TEACHER_EMAIL, password }), headers: jsonHdr });
-if (!r.ok) { console.error('登录失败：', r.status, (await r.text()).slice(0, 200)); process.exit(1); }
-const auth = await r.json();
-const token = auth.access_token, teacherId = auth.user?.id;
+// ---- 1. 登录（最多试 3 次） ----
+let token = null, teacherId = null;
+for (let attempt = 1; attempt <= 3 && !token; attempt++) {
+  const password = await askHidden(`老师邮箱 ${TEACHER_EMAIL}\n请输入老师密码（输入时不显示）：`);
+  const lr = await api('POST', '/auth/v1/token?grant_type=password', { body: JSON.stringify({ email: TEACHER_EMAIL, password }), headers: jsonHdr });
+  if (lr.ok) { const auth = await lr.json(); token = auth.access_token; teacherId = auth.user?.id; }
+  else console.error(`登录失败（第 ${attempt}/3 次）：`, lr.status, (await lr.text()).slice(0, 160));
+}
+if (!token) { console.error('3 次都没登录成功。先在浏览器里的老师页确认密码是否正确，再重新运行。'); await bye(1); }
 console.log('已登录老师账号。');
 
 // ---- 2. 上传媒体（已存在的跳过，可中断后重跑） ----
