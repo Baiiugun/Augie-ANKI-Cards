@@ -69,7 +69,7 @@ if (!token) { console.error('3 次都没登录成功。先在浏览器里的老�
 console.log('已登录老师账号。');
 
 // ---- 2. 上传媒体（已存在的跳过，可中断后重跑） ----
-let done = 0, skipped = 0, failed = 0;
+let done = 0, skipped = 0, failed = 0, lastErr = '', probing = true;
 async function uploadOne(m) {
   const objPath = `${m.slug}/${m.file}`;
   const head = await fetch(`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${objPath}`, { method: 'HEAD' }).catch(() => null);
@@ -77,15 +77,24 @@ async function uploadOne(m) {
   const ext = path.extname(m.file).slice(1).toLowerCase();
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await api('POST', `/storage/v1/object/${BUCKET}/${objPath}`, { token, body: fs.readFileSync(m.full), headers: { 'Content-Type': MIME[ext] || 'application/octet-stream', 'x-upsert': 'true' } });
+      const res = await api('POST', `/storage/v1/object/${BUCKET}/${objPath}`, { token, body: fs.readFileSync(m.full), headers: { 'Content-Type': MIME[ext] || 'application/octet-stream' } });
       if (res.ok) { done++; return; }
-      if (attempt === 3) { failed++; console.error(`上传失败 ${objPath}: ${res.status} ${(await res.text()).slice(0, 120)}`); }
+      const txt = await res.text();
+      if (res.status === 409 || /Duplicate|already exists/i.test(txt)) { skipped++; return; }   // 已经传过了
+      if (attempt === 3 || /row-level security|Unauthorized/i.test(txt)) { failed++; lastErr = `${objPath}: ${res.status} ${txt.slice(0, 160)}`; if (!probing) console.error('上传失败 ' + lastErr); return; }
     } catch (e) { if (attempt === 3) { failed++; console.error(`上传失败 ${objPath}: ${e.message}`); } }
   }
 }
-let idx = 0;
+// 先试传 1 个文件：不通就立刻停下说明原因，不去刷几千行报错
+await uploadOne(mediaFiles[0]);
+if (failed) {
+  console.error(`\n第一个文件就上传失败了，先停在这里（没有写入任何进度）。\n原因：${lastErr}\n把上面这几行发给 AI。`);
+  await bye(1);
+}
+probing = false;
+let idx = 1;
 const worker = async () => {
-  while (idx < mediaFiles.length) {
+  while (idx < mediaFiles.length && failed < 5) {
     const m = mediaFiles[idx++];
     await uploadOne(m);
     const n = done + skipped + failed;
