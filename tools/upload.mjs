@@ -108,7 +108,7 @@ if (failed) { console.error('有媒体上传失败，先不导入进度。重新
 // ---- 3. 学生 ----
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from(crypto.randomBytes(16), (b) => ALPHA[b % 32]).join('');
-r = await api('GET', `/rest/v1/anki_test_learners?name=eq.${encodeURIComponent(NAME)}&select=id,code`, { token });
+let r = await api('GET', `/rest/v1/anki_test_learners?name=eq.${encodeURIComponent(NAME)}&select=id,code`, { token });
 if (!r.ok) { console.error('读取学生失败（SQL 是否已运行？）：', r.status, (await r.text()).slice(0, 300)); process.exit(1); }
 let learner = (await r.json())[0];
 if (!learner) {
