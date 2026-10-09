@@ -41,6 +41,12 @@
   .sync{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mute);background:var(--card);padding:2px 8px;border-radius:8px;border:1px solid var(--line)}
   .sync.bad{color:#fff;background:var(--learn);border-color:var(--learn)}
   input.code{width:100%;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);letter-spacing:2px;text-transform:uppercase}
+  .gear{background:transparent;color:var(--mute);font-size:22px;padding:6px 8px;line-height:1}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+  .panel h2{font-size:17px;margin:0 0 6px}
+  .step{display:flex;align-items:center;gap:6px;margin:12px 0}.step span{width:44px;color:var(--mute)}
+  .step b{min-width:56px;text-align:center;font-size:24px}
+  .step button{background:var(--bg);color:var(--ink);border:1px solid var(--line);padding:8px 10px;font-size:15px}
   .err{color:var(--learn);margin:10px 0}
 </style>
 </head>
@@ -51,6 +57,7 @@
 
 <script type="module">
 import { createApi, createMockApi, stateOf } from './lib/api.js';
+import { mountBrowser } from './lib/browser.js';
 import { mediaBase } from './lib/config.js';
 import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
 
@@ -100,6 +107,7 @@ async function boot() {
 async function refresh() {
   const r = await S.api.getState();
   S.learner = r.learner; S.skew = r.nowMs - Date.now(); S.log = r.todayLog.map((x) => ({ key: x[0], prev_type: x[1], type: x[2] }));
+  S.today = r.today; S.settings = r.settings || {};
   S.cards = new Map(r.cards.map((c) => [c.key, c]));
   S.bySlug = new Map(S.manifest.packages.map((p) => [p.slug, []]));
   for (const c of S.cards.values()) S.bySlug.get(c.key.split(':')[0])?.push(c);
@@ -123,11 +131,17 @@ function todayCounts(slug) {
   const mine = S.log.filter((l) => l.key.startsWith(slug + ':'));
   return { newDone: new Set(mine.filter((l) => l.prev_type === 0).map((l) => l.key)).size, revDone: mine.filter((l) => l.type === 1).length };
 }
+// 每个包的每日上限：老师设的“每天”值，没设就用学生默认值；“仅今天”的设置当天优先（对应 Anki 的 Today only）
+function limitsFor(slug) {
+  const st = S.settings[slug] || {};
+  let n = st.new_per_day ?? S.learner.new_per_day, r = st.rev_per_day ?? S.learner.rev_per_day;
+  if (st.today_day === S.today) { if (st.today_new != null) n = st.today_new; if (st.today_rev != null) r = st.today_rev; }
+  return { newPerDay: n, revPerDay: r, base: { n: st.new_per_day ?? S.learner.new_per_day, r: st.rev_per_day ?? S.learner.rev_per_day }, overridden: st.today_day === S.today && (st.today_new != null || st.today_rev != null) };
+}
 function queueFor(slugs) {
-  const lim = { newPerDay: S.learner.new_per_day, revPerDay: S.learner.rev_per_day };
   const q = { learnDue: [], learnAhead: [], interday: [], reviews: [], news: [] };
   for (const s of slugs) {
-    const b = buildQueue(S.bySlug.get(s) || [], now(), todayCounts(s), lim);
+    const b = buildQueue(S.bySlug.get(s) || [], now(), todayCounts(s), limitsFor(s));
     for (const k of Object.keys(q)) q[k].push(...b[k]);
   }
   q.learnDue.sort((a, b) => a.due - b.due);
@@ -139,19 +153,64 @@ const qCounts = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.le
 function showHome() {
   S.session = null; stopAudio();
   const tot = queueFor(S.manifest.packages.map((p) => p.slug)), t = qCounts(tot);
-  const row = (slug, name, sub, c) => `<div class="deck" data-slug="${slug}">
+  const row = (slug, name, sub, c, gear) => `<div class="deck" data-slug="${slug}">
       <div class="name">${name}<small>${sub}</small></div>
-      <div class="num n-new ${c.n ? '' : 'zero'}">${c.n}<i>新</i></div><div class="num n-learn ${c.l ? '' : 'zero'}">${c.l}<i>学习中</i></div><div class="num n-rev ${c.r ? '' : 'zero'}">${c.r}<i>复习</i></div></div>`;
-  let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">每个包每天最多新卡 ${S.learner.new_per_day} 张、复习 ${S.learner.rev_per_day} 张（和 Anki 一样）</div>`;
-  html += row('', '全部', '所有包一起学', t);
+      <div class="num n-new ${c.n ? '' : 'zero'}">${c.n}<i>新</i></div><div class="num n-learn ${c.l ? '' : 'zero'}">${c.l}<i>学习中</i></div><div class="num n-rev ${c.r ? '' : 'zero'}">${c.r}<i>复习</i></div>
+      ${gear ? `<button class="gear" data-gear="${slug}" title="设置">⚙</button>` : ''}</div>`;
+  let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">点右边的 ⚙ 可以改这个包每天（或仅今天）学多少</div>`;
+  html += row('', '全部', '所有包一起学', t, false);
   for (const p of S.manifest.packages) {
-    const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length;
-    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 挂起 ${sus}` : ''}`, qCounts(queueFor([p.slug])));
+    const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length, lim = limitsFor(p.slug);
+    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 挂起 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
   }
+  html += `<p><button class="btn ghost" id="mg">📚 管理卡片（选今天学哪些）</button></p>`;
   if (MOCK) html += `<p class="sub">离线演示模式：进度只存在这台设备上。<a href="#" id="rs">清空演示进度</a></p>`;
   app.innerHTML = html;
   app.querySelectorAll('.deck').forEach((d) => d.onclick = () => startStudy(d.dataset.slug));
+  app.querySelectorAll('[data-gear]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); showSettings(b.dataset.gear); });
+  $('#mg').onclick = () => showBrowse('');
   $('#rs')?.addEventListener('click', (e) => { e.preventDefault(); S.api.reset(); location.reload(); });
+}
+
+// ---------- 设置：这个包今天/每天学多少 ----------
+function showSettings(slug) {
+  const p = S.manifest.packages.find((x) => x.slug === slug), lim = limitsFor(slug), c = todayCounts(slug);
+  let n = lim.newPerDay, r = lim.revPerDay;
+  app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">${p.name}</div><span></span></div>
+    <div class="panel"><h2>今天最多学几张</h2>
+      <div class="sub">只改今天。明天自动恢复为每天 新 ${lim.base.n} / 复习 ${lim.base.r}（每天的数字由爸爸/老师来改）。今天已经学了：新 ${c.newDone} 张，复习 ${c.revDone} 张。</div>
+      <div class="step"><span>新卡</span><button data-d="n-10">−10</button><button data-d="n-1">−1</button><b id="vn">${n}</b><button data-d="n+1">+1</button><button data-d="n+10">+10</button></div>
+      <div class="step"><span>复习</span><button data-d="r-50">−50</button><button data-d="r-10">−10</button><b id="vr">${r}</b><button data-d="r+10">+10</button><button data-d="r+50">+50</button></div>
+      <p id="smsg" class="sub"></p><button class="btn" id="save">保存（仅今天）</button></div>`;
+  $('#back').onclick = showHome;
+  app.querySelectorAll('.step button').forEach((b) => b.onclick = () => {
+    const m = b.dataset.d.match(/^(n|r)([-+])(\d+)$/), k = m[1], d = (m[2] === '-' ? -1 : 1) * +m[3];
+    if (k === 'n') n = Math.min(Math.max(n + d, 0), 1000); else r = Math.min(Math.max(r + d, 0), 10000);
+    $('#vn').textContent = n; $('#vr').textContent = r;
+  });
+  $('#save').onclick = async () => {
+    $('#smsg').textContent = '保存中…';
+    try {
+      await S.api.setTodayLimits(slug, n, r);
+      S.settings[slug] = { ...(S.settings[slug] || {}), today_day: S.today, today_new: n, today_rev: r };
+      showHome();
+    } catch (e) { $('#smsg').textContent = '保存失败：' + e.message + '（如果提示函数不存在，说明数据库还没运行 05 号 SQL）'; }
+  };
+}
+
+// ---------- 卡片浏览器：选今天学哪些 ----------
+function showBrowse(slug) {
+  app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">管理卡片</div><span></span></div><div id="kb"></div>`;
+  $('#back').onclick = showHome;
+  const apply = (keys, fn) => { for (const k of keys) { const c = S.cards.get(k); if (c) fn(c); } };
+  mountBrowser($('#kb'), {
+    packages: S.manifest.packages, content: S.content, startSlug: slug || S.manifest.packages[0].slug,
+    getStates: () => S.cards, today: () => S.today, canManage: !!S.learner.self_manage,
+    actions: {
+      suspend: async (keys, flag) => { const n = await S.api.setSuspended(keys, flag); apply(keys, (c) => { c.suspended = flag; }); return n; },
+      dueToday: async (keys) => { const n = await S.api.setDueToday(keys); apply(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > S.today) c.due = S.today; }); return n; },
+    },
+  });
 }
 
 // ---------- 背诵 ----------

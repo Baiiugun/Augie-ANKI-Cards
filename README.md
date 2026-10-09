@@ -19,9 +19,10 @@
 | 路径 | 内容 |
 |---|---|
 | `index.html` | 学生背词页（`?mock=1` 是不联网的演示模式） |
-| `Augie-Anki测试-老师登录版本.html` | 老师页：学生链接、每天学习量、各包进度、放出挂起的新卡 |
+| `Augie-Anki测试-老师登录版本.html` | 老师页：学生链接、每个包每天学多少、学生能否自管卡片、卡片管理、每天学习量、各包进度 |
 | `lib/anki-sched.js` | Anki 旧调度（SM-2）的复刻，参数 = Augie 的 Anki 默认预设 |
-| `lib/api.js`、`lib/config.js` | 和 Supabase 通话、公开配置（anon 公开密钥） |
+| `lib/api.js`、`lib/teacher-api.js`、`lib/config.js` | 学生页 / 老师页和 Supabase 通话、公开配置（anon 公开密钥）；`?mock=1` 离线演示用 `lib/mock-store.js` |
+| `lib/browser.js` | 卡片浏览器（搜索、按状态筛选、勾选后挂起 / 放出 / 设为今天复习），学生页和老师页共用 |
 | `data/` | 卡片文字内容（`manifest.json` + 每个包一个 json），**不含进度** |
 | `tools/` | 导入程序：`build-content.mjs` 拆 .apkg，`upload.mjs` 上传媒体并导入进度（在老师电脑上运行） |
 | `test/` | 用真实 Anki 答题记录检验调度规则的脚本 |

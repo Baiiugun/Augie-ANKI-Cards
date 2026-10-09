@@ -11,25 +11,27 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
   #banner{background:var(--warn);color:#fff;text-align:center;padding:6px 10px;font-weight:700;font-size:14px}
-  main{max-width:900px;margin:0 auto;padding:14px}
+  main{max-width:960px;margin:0 auto;padding:14px}
   h1{font-size:22px;margin:10px 0}
-  h2{font-size:17px;margin:22px 0 8px}
+  h2{font-size:17px;margin:24px 0 8px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
   th{color:var(--mute);font-weight:600;font-size:12px}
   .scroll{overflow-x:auto}
-  input,select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+  input,select{font:inherit;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+  td input[type=number]{width:74px;padding:5px 6px}
   button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:600}
   button.ghost{background:transparent;color:var(--blue);border:1px solid var(--line)}
+  button.sm{padding:6px 10px}
   button:disabled{opacity:.4}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .mute{color:var(--mute);font-size:13px}
   .err{color:var(--red);margin:8px 0}.ok{color:var(--green)}
   .link{word-break:break-all;font-size:13px;background:var(--bg);padding:8px;border-radius:8px;margin:6px 0}
-  .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;min-width:60px}.bar>i{display:block;height:100%;background:var(--blue)}
   .tag{font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px;color:var(--mute)}
+  label.sw{display:flex;gap:8px;align-items:center;cursor:pointer}
 </style>
 </head>
 <body>
@@ -37,57 +39,44 @@
 <main id="app"></main>
 
 <script type="module">
-import { SUPABASE_URL, ANON_KEY } from './lib/config.js';
 import { dayNumber } from './lib/anki-sched.js';
+import { mountBrowser } from './lib/browser.js';
+import { login, createTeacherApi, createMockTeacherApi } from './lib/teacher-api.js';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 const TEACHER_EMAIL = 'baiyuguang@gmail.com';
 const PAGE_BASE = location.origin + location.pathname.replace(/[^/]*$/, '');
-let token = null, manifest = null, learners = [], cur = null, cards = [];
+const MOCK = new URLSearchParams(location.search).get('mock') === '1';
+let api = null, manifest = null, content = {}, learners = [], cur = null, cardRows = [], settings = {};
 
 const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
 const ssSet = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) { /* 忽略 */ } };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-async function api(method, p, body, extra = {}) {
-  const res = await fetch(SUPABASE_URL + p, { method, headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + (token || ANON_KEY), 'Content-Type': 'application/json', ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (!res.ok) { let m = ''; try { m = (await res.json()).message; } catch (e) { /* 忽略 */ } throw new Error(m || ('HTTP ' + res.status)); }
-  const t = await res.text(); return t ? JSON.parse(t) : null;
-}
-async function getAll(path) {   // PostgREST 一次最多返回 1000 行，分页取
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const rows = await api('GET', path, undefined, { Range: `${from}-${from + 999}`, 'Range-Unit': 'items' });
-    out.push(...rows); if (rows.length < 1000) break;
-  }
-  return out;
-}
-
 // ---------- 登录 ----------
 function showLogin(msg) {
   app.innerHTML = `<h1>老师登录</h1><div class="card"><div class="row"><input id="em" value="${TEACHER_EMAIL}" size="26" autocomplete="username"><input id="pw" type="password" placeholder="老师密码" autocomplete="current-password"><button id="go">登录</button></div>${msg ? `<div class="err">${esc(msg)}</div>` : ''}<p class="mute">密码只发给 Supabase 登录，不会存在这个网页里。</p></div>`;
   const go = async () => {
-    try {
-      const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', { method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('#em').value.trim(), password: $('#pw').value }) });
-      if (!r.ok) throw new Error('邮箱或密码不对（' + r.status + '）');
-      token = (await r.json()).access_token; ssSet('anki_test_teacher_token', token);
-      await loadAll();
-    } catch (e) { showLogin(e.message); }
+    try { const token = await login($('#em').value.trim(), $('#pw').value); ssSet('anki_test_teacher_token', token); api = createTeacherApi(token); await loadAll(); }
+    catch (e) { showLogin(e.message); }
   };
   $('#go').onclick = go; $('#pw').onkeydown = (e) => { if (e.key === 'Enter') go(); };
 }
+function logout() { ssSet('anki_test_teacher_token', null); api = null; showLogin(); }
 
 async function loadAll() {
   app.innerHTML = '<p class="mute">加载中…</p>';
   try {
     manifest = await (await fetch('data/manifest.json?v=' + Date.now())).json();
-    learners = await api('GET', '/rest/v1/anki_test_learners?select=*&order=created_at');
+    await Promise.all(manifest.packages.map(async (p) => { content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${manifest.generated}`)).json(); }));
+    if (MOCK && !api) api = createMockTeacherApi(manifest, content);
+    learners = await api.listLearners();
     showLearners();
   } catch (e) {
-    if (/JWT|expired|401/i.test(e.message)) { ssSet('anki_test_teacher_token', null); token = null; return showLogin('登录过期，请重新登录'); }
+    if (/JWT|expired|401/i.test(e.message) || e.status === 401) return (ssSet('anki_test_teacher_token', null), showLogin('登录过期，请重新登录'));
     app.innerHTML = `<h1>出错了</h1><p class="err">${esc(e.message)}</p><p class="mute">如果提示找不到表 anki_test_learners，说明还没有在 Supabase 里运行建表 SQL。</p><button id="rl">重试</button> <button class="ghost" id="lo">退出登录</button>`;
-    $('#rl').onclick = loadAll; $('#lo').onclick = () => { ssSet('anki_test_teacher_token', null); token = null; showLogin(); };
+    $('#rl').onclick = loadAll; $('#lo').onclick = logout;
   }
 }
 
@@ -96,76 +85,101 @@ const fmtTime = (s) => (s ? new Date(s).toLocaleString('zh-CN', { hour12: false 
 const linkOf = (l) => `${PAGE_BASE}#k=${l.code}`;
 function showLearners() {
   cur = null;
-  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>学生</h1><button class="ghost" id="lo">退出登录</button></div>
+  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>学生</h1>${MOCK ? '<span class="tag">离线演示</span>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${learners.map((l) => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:18px">${esc(l.name)}</b>
       <span class="mute">最近活跃：${fmtTime(l.last_active)} · 状态：${esc(l.status)}</span></div>
-      <div class="link" id="lk-${l.id}">${esc(linkOf(l))}</div>
-      <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">查看进度</button></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
-    <h2>新增学生</h2><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>
+      <div class="link">${esc(linkOf(l))}</div>
+      <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">进入管理</button></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
+    ${MOCK ? '' : `<h2>新增学生</h2><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
     <p class="mute">学生链接 = 学生的“钥匙”，不要贴到公开的地方。</p>`;
-  $('#lo').onclick = () => { ssSet('anki_test_teacher_token', null); token = null; showLogin(); };
+  $('#lo')?.addEventListener('click', logout);
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '请手动复制上面的链接'; } });
   app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openLearner(learners.find((x) => x.id === b.dataset.open)));
-  $('#add').onclick = async () => {
+  $('#add')?.addEventListener('click', async () => {
     const name = $('#nn').value.trim(); if (!name) return;
     const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', rnd = crypto.getRandomValues(new Uint8Array(16)), code = Array.from(rnd, (b) => A[b % 32]).join('');
-    try { await api('POST', '/rest/v1/anki_test_learners', { name, code }, { Prefer: 'return=minimal' }); await loadAll(); }
-    catch (e) { $('#addmsg').textContent = '失败：' + e.message; }
-  };
+    try { await api.addLearner(name, code); await loadAll(); } catch (e) { $('#addmsg').textContent = '失败：' + e.message; }
+  });
 }
 
-// ---------- 单个学生：每天学习量 + 各包进度 + 放出新卡 ----------
+// ---------- 单个学生 ----------
 async function openLearner(l) {
   cur = l; app.innerHTML = '<p class="mute">加载中…</p>';
   try {
-    const [stats, rows] = await Promise.all([
-      api('POST', '/rest/v1/rpc/anki_test_teacher_daily_stats', { p_learner: l.id, p_days: 14 }),
-      getAll(`/rest/v1/anki_test_card_state?learner_id=eq.${l.id}&select=card_key,type,queue,due,suspended`),
-    ]);
-    cards = rows; renderLearner(l, stats);
-  } catch (e) { app.innerHTML = `<p class="err">${esc(e.message)}</p><button id="bk">返回</button>`; $('#bk').onclick = showLearners; }
+    let noSettings = false;
+    const [stats, rows, st] = await Promise.all([api.dailyStats(l.id, 14), api.getCards(l.id), api.getSettings(l.id).catch(() => { noSettings = true; return {}; })]);
+    cardRows = rows; settings = st; renderLearner(l, stats);
+    if (noSettings) $('#setmsg').innerHTML = '<p class="err">读不到每日上限设置：数据库还没运行 05 号 SQL（05-Augie-Anki测试系统-每日上限与卡片管理.sql）。运行后刷新本页，这里和下面的“学生能否自管”才能保存。</p>';
+  } catch (e) { app.innerHTML = `<p class="err">${esc(e.message)}</p><p class="mute">如果提示找不到 anki_test_deck_settings 或函数，说明还没运行 05 号 SQL。</p><button id="bk">返回</button>`; $('#bk').onclick = showLearners; }
 }
+const todayNo = () => dayNumber(Date.now());
+
 function renderLearner(l, stats) {
-  const today = dayNumber(Date.now());
-  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, susNew: 0, total: 0 };
-  for (const c of cards) {
+  const today = todayNo();
+  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, total: 0 };
+  for (const c of cardRows) {
     const b = by[c.card_key.split(':')[0]]; if (!b) continue; b.total++;
-    if (c.suspended) { b.sus++; if (c.type === 0) b.susNew++; continue; }
+    if (c.suspended) { b.sus++; continue; }
     if (c.queue === 0) b.n++; else if (c.queue === 1 || c.queue === 3) b.l++; else b.r++;
     if (c.queue === 2 && c.due <= today) b.due++;
   }
+  const lim = (slug) => { const s = settings[slug] || {}; return { n: s.new_per_day, r: s.rev_per_day, tn: s.today_day === today ? s.today_new : null, tr: s.today_day === today ? s.today_rev : null }; };
   app.innerHTML = `<div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1></div>
+
+    <h2>每天学多少（每个包分别设置）</h2>
+    <div class="card scroll"><table><tr><th>包</th><th>每天新卡</th><th>每天复习</th><th>学生今天自己调过</th><th></th></tr>
+    ${manifest.packages.map((p) => { const v = lim(p.slug); return `<tr><td>${esc(p.name)}</td>
+      <td><input type="number" min="0" max="1000" id="ln-${p.slug}" value="${v.n ?? ''}" placeholder="${l.new_per_day}"></td>
+      <td><input type="number" min="0" max="10000" id="lr-${p.slug}" value="${v.r ?? ''}" placeholder="${l.rev_per_day}"></td>
+      <td class="mute">${v.tn != null || v.tr != null ? `新 ${v.tn ?? '—'} / 复习 ${v.tr ?? '—'}` : '—'}</td>
+      <td><button class="sm" data-save="${p.slug}">保存</button></td></tr>`; }).join('')}</table>
+    <p class="mute">留空 = 用学生的默认值（新卡 ${l.new_per_day} / 复习 ${l.rev_per_day}，同 Anki 的默认设置）。学生在自己页面点 ⚙ 改的是“仅今天”，明天自动恢复为这里设的数字。</p><div id="setmsg"></div></div>
+
+    <h2>学生能不能自己管理卡片</h2>
+    <div class="card"><label class="sw"><input type="checkbox" id="sm" ${l.self_manage === false ? '' : 'checked'}> 允许学生自己挂起 / 放出卡片、把卡设为今天复习（学生页的“管理卡片”）</label>
+    <p class="mute">关掉后，学生只能看，不能改；你仍然可以在下面的卡片管理里替他改。学生改“今天学几张”不受这个开关影响。</p></div>
+
+    <h2>卡片管理：选今天学哪些</h2>
+    <div class="card" id="kb"></div>
+
     <h2>每天学了多少（最近 14 天，凌晨 4 点换天）</h2>
     <div class="card scroll"><table><tr><th>日期</th><th>新学几张</th><th>复习几张</th><th>答题几次</th><th></th></tr>
     ${stats.map((s) => `<tr><td>${s.day_date}</td><td>${s.new_cards}</td><td>${s.review_cards}</td><td>${s.answers}</td><td>${s.from_import ? '<span class="tag">含 Anki 历史</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">最近 14 天没有学习记录</td></tr>'}</table>
-    <p class="mute">新学 = 当天第一次见到的卡；复习几张 = 当天复习过的卡（同一张只算一次）；答题几次 = 总答题次数。“含 Anki 历史”表示这天的数据有一部分是从 Anki 导入的。</p></div>
+    <p class="mute">新学 = 当天第一次见到的卡；复习几张 = 当天复习过的卡（同一张只算一次）；答题几次 = 总答题次数。“含 Anki 历史”表示这天有一部分数据是从 Anki 导入的。</p></div>
+
     <h2>各个包的进度</h2>
-    <div class="card scroll"><table><tr><th>包</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>挂起</th><th>放出新卡</th></tr>
-    ${Object.entries(by).map(([slug, b]) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td>
-      <td>${b.sus}${b.susNew !== b.sus ? `<span class="mute">（其中新卡 ${b.susNew}）</span>` : ''}</td>
-      <td>${b.susNew ? `<span class="row" style="justify-content:flex-end;flex-wrap:nowrap"><input type="number" min="1" max="${b.susNew}" value="${Math.min(10, b.susNew)}" id="rel-${slug}" style="width:70px;padding:5px"><button data-rel="${slug}" style="padding:6px 10px">放出</button></span>` : '—'}</td></tr>`).join('')}</table>
-    <p class="mute">“挂起”的卡不会出现在学生的学习队列里。点“放出”会把这个包里最靠前的 N 张挂起的新卡放出来，学生下次打开就能学到。</p><div id="relmsg"></div></div>
+    <div class="card scroll"><table><tr><th>包</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>挂起</th></tr>
+    ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td></tr>`).join('')}</table></div>
+
     <h2>出测试</h2><div class="card mute">下一版做：勾选范围 → 随机抽 N 张 → 我自己测 / 发给他测。</div>`;
   $('#bk').onclick = showLearners;
-  app.querySelectorAll('[data-rel]').forEach((b) => b.onclick = () => release(l, b.dataset.rel, +$(`#rel-${b.dataset.rel}`).value));
-}
-async function release(l, slug, n) {
-  const msg = $('#relmsg');
-  const pool = cards.filter((c) => c.suspended && c.type === 0 && c.card_key.startsWith(slug + ':')).sort((a, b) => a.due - b.due).slice(0, Math.max(n, 0));
-  if (!pool.length) return;
-  if (!confirm(`放出「${manifest.packages.find((p) => p.slug === slug).name}」里的 ${pool.length} 张新卡？`)) return;
-  try {
-    for (let i = 0; i < pool.length; i += 100) {
-      const keys = pool.slice(i, i + 100).map((c) => c.card_key).join(',');
-      await api('PATCH', `/rest/v1/anki_test_card_state?learner_id=eq.${l.id}&card_key=in.(${keys})`, { suspended: false }, { Prefer: 'return=minimal' });
-    }
-    await openLearner(l);
-    $('#relmsg').innerHTML = `<p class="ok">已放出 ${pool.length} 张新卡。</p>`;
-  } catch (e) { msg.innerHTML = `<p class="err">失败：${esc(e.message)}</p>`; }
+
+  app.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => {
+    const slug = b.dataset.save, num = (id) => { const v = $(id).value.trim(); return v === '' ? null : Math.max(0, Math.round(+v)); };
+    const nn = num('#ln-' + slug), rr = num('#lr-' + slug);
+    try { await api.saveSettings(l.id, slug, { new_per_day: nn, rev_per_day: rr }); settings[slug] = { ...(settings[slug] || {}), slug, new_per_day: nn, rev_per_day: rr }; $('#setmsg').innerHTML = `<p class="ok">已保存「${esc(manifest.packages.find((p) => p.slug === slug).name)}」：新卡 ${nn ?? '默认'} / 复习 ${rr ?? '默认'}。学生刷新页面后生效。</p>`; }
+    catch (e) { $('#setmsg').innerHTML = `<p class="err">失败：${esc(e.message)}${/does not exist|relation|schema cache/i.test(e.message) ? '（还没运行 05 号 SQL？）' : ''}</p>`; }
+  });
+  $('#sm').onchange = async (e) => {
+    try { await api.updateLearner(l.id, { self_manage: e.target.checked }); l.self_manage = e.target.checked; }
+    catch (err) { e.target.checked = !e.target.checked; alert('保存失败：' + err.message + '（还没运行 05 号 SQL？）'); }
+  };
+
+  const states = () => new Map(cardRows.map((c) => [c.card_key, c]));
+  const patch = (keys, fn) => { const s = new Set(keys); for (const c of cardRows) if (s.has(c.card_key)) fn(c); };
+  mountBrowser($('#kb'), {
+    packages: manifest.packages, content, getStates: states, today: todayNo, canManage: true,
+    actions: {
+      suspend: async (keys, flag) => { const n = await api.setSuspended(l.id, keys, flag); patch(keys, (c) => { c.suspended = flag; }); return n; },
+      dueToday: async (keys) => { const n = await api.setDueToday(l.id, keys, todayNo()); patch(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > todayNo()) c.due = todayNo(); }); return n; },
+    },
+  });
 }
 
-token = ssGet('anki_test_teacher_token');
-token ? loadAll() : showLogin();
+const saved = ssGet('anki_test_teacher_token');
+if (MOCK) loadAll();
+else if (saved) { api = createTeacherApi(saved); loadAll(); }
+else showLogin();
 </script>
 </body>
 </html>
