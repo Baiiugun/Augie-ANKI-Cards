@@ -52,8 +52,20 @@ function askHidden(prompt) {
 }
 const bye = (code) => { process.exitCode = code; setTimeout(() => process.exit(code), 80); return new Promise(() => {}); }; // 稍等再退出，避免 Windows 上的 libuv 报错
 
+// 网络偶发超时/5xx 时自动重试（最多 6 次，间隔逐次加长），不再因为一次抖动就整个崩掉
 async function api(method, p, { token, body, headers = {} } = {}) {
-  return fetch(SUPABASE_URL + p, { method, headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + (token || ANON_KEY), ...headers }, body });
+  let lastErr;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const res = await fetch(SUPABASE_URL + p, { method, headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + (token || ANON_KEY), ...headers }, body });
+      if (res.status >= 500 && attempt < 6) { lastErr = new Error('HTTP ' + res.status); }
+      else return res;
+    } catch (e) { lastErr = e; }
+    const wait = attempt * 2000;
+    console.log(`  网络不稳（${lastErr.cause?.code || lastErr.message}），${wait / 1000} 秒后重试（第 ${attempt}/6 次）…`);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  throw lastErr;
 }
 const jsonHdr = { 'Content-Type': 'application/json' };
 
