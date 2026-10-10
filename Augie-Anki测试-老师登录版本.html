@@ -169,6 +169,7 @@ function renderLearner(l, stats) {
   const patch = (keys, fn) => { const s = new Set(keys); for (const c of cardRows) if (s.has(c.card_key)) fn(c); };
   mountBrowser($('#kb'), {
     packages: manifest.packages, content, getStates: states, today: todayNo, canManage: true,
+    loadReview: () => api.getReviewSummary(l.id),
     actions: {
       suspend: async (keys, flag) => { const n = await api.setSuspended(l.id, keys, flag); patch(keys, (c) => { c.suspended = flag; }); return n; },
       dueToday: async (keys) => { const n = await api.setDueToday(l.id, keys, todayNo()); patch(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > todayNo()) c.due = todayNo(); }); return n; },

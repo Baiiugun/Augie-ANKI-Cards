@@ -201,11 +201,13 @@ function showSettings(slug) {
 // ---------- 卡片浏览器：选今天学哪些 ----------
 function showBrowse(slug) {
   app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">管理卡片</div><span></span></div><div id="kb"></div>`;
-  $('#back').onclick = showHome;
+  app.style.maxWidth = '1100px';   // 浏览器要宽一点（左边筛选 + 右边表格）
+  $('#back').onclick = () => { app.style.maxWidth = ''; showHome(); };
   const apply = (keys, fn) => { for (const k of keys) { const c = S.cards.get(k); if (c) fn(c); } };
   mountBrowser($('#kb'), {
     packages: S.manifest.packages, content: S.content, startSlug: slug || S.manifest.packages[0].slug,
     getStates: () => S.cards, today: () => S.today, canManage: !!S.learner.self_manage,
+    loadReview: () => S.api.getReviewSummary(),
     actions: {
       suspend: async (keys, flag) => { const n = await S.api.setSuspended(keys, flag); apply(keys, (c) => { c.suspended = flag; }); return n; },
       dueToday: async (keys) => { const n = await S.api.setDueToday(keys); apply(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > S.today) c.due = S.today; }); return n; },
