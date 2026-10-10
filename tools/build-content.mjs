@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readApkg } from './apkg.js';
-import { renderCard } from './render.js';
+import { renderCard, rewriteMediaUrls, cleanField } from './render.js';
 import { REPO, SRC_DIR, WORK, SLUGS } from './config.mjs';
 
 const CRT = 1716148800;
@@ -14,16 +14,18 @@ const dataDir = path.join(REPO, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(WORK, { recursive: true });
 
+// 字段原文（给网页“修改文字”后重新生成卡片用）：声音/图片的文件名换成上传后的名字，找不到文件的声音标记去掉（和渲染时的处理一致）
+const SCHEME = /^([a-z][a-z0-9+.-]*:|\/|#|\{)/i;
+const rawField = (s, mediaMap) => rewriteMediaUrls((s || '').replace(/\[sound:([^\]]+)\]/g, (all, name) => {
+  name = name.trim(); let dec = name; try { dec = decodeURIComponent(name); } catch { /* 原样 */ }
+  const f = SCHEME.test(name) ? null : (mediaMap.get(dec) ?? mediaMap.get(name) ?? null);
+  return f ? '[sound:' + f + ']' : '';
+}), mediaMap);
+
 const files = fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.apkg')).sort();
 const manifest = { generated: new Date().toISOString(), note: '【临时测试系统】卡片文字内容；进度不在这里', packages: [] };
 const qFromType = { 0: 0, 1: 1, 2: 2, 3: 1 };
 
-// 字段原文 → 浏览器里显示/分组用的短文字：去标签，声音/图片/视频换成小图标
-const ENT = { '&nbsp;': ' ', '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#39;': "'" };
-const cleanField = (s) => (s || '')
-  .replace(/<style[\s\S]*?<\/style>/gi, '').replace(/\[sound:[^\]]*\]/g, ' 🔊 ').replace(/<img[^>]*>/gi, ' 🖼 ').replace(/<video[\s\S]*?<\/video>/gi, ' 🎞 ')
-  .replace(/<br\s*\/?>|<\/(div|p|li|figure|tr)>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&#?\w+;/g, (m) => ENT[m] ?? ' ')
-  .replace(/\s+/g, ' ').trim().slice(0, 160);
 
 for (const f of files) {
   const m0 = f.match(/^(.*?)-Augie-v(\d+)\.apkg$/);
@@ -51,7 +53,7 @@ for (const f of files) {
     const deck = r.decks.get(c.did) || '';
     const out = renderCard(mdl, c, fields, { tags: n.tags.join(' '), deck }, r.mediaMap);
     const key = `${slug}:${c.id}`;
-    const entry = { k: key, f: out.front, b: out.back, m: modelIdx.get(n.mid), o: c.ord, v: mdl.fields.map((k) => cleanField(fields[k])) };
+    const entry = { k: key, f: out.front, b: out.back, m: modelIdx.get(n.mid), o: c.ord, v: mdl.fields.map((k) => cleanField(fields[k])), r: mdl.fields.map((k) => rawField(fields[k], r.mediaMap)) };
     if (n.tags.length) entry.g = n.tags;
     if (deck && deck !== 'Default' && deck !== '默认') entry.d = deck;
     cards.push(entry);
@@ -72,7 +74,7 @@ for (const f of files) {
       factor: x.factor, time_ms: Math.min(Math.max(x.time, 0), 600000), type: x.type === 3 ? 1 : x.type, prev_type, source: 'anki-import' });
   }
 
-  fs.writeFileSync(path.join(dataDir, `${slug}.json`), JSON.stringify({ slug, name, version, models: modelList.map(([, mm]) => ({ name: mm.name, css: mm.css, fields: mm.fields, tpl: mm.templates.map((t) => t.name) })), cards }));
+  fs.writeFileSync(path.join(dataDir, `${slug}.json`), JSON.stringify({ slug, name, version, models: modelList.map(([, mm]) => ({ name: mm.name, css: mm.css, fields: mm.fields, kind: mm.kind, tpl: mm.templates.map((t) => t.name), tm: mm.templates.map((t) => ({ name: t.name, qfmt: t.qfmt, afmt: t.afmt })) })), cards }));
   fs.writeFileSync(path.join(WORK, `state-${slug}.json`), JSON.stringify({ slug, name, crt: r.crt, state, revlog }));
   manifest.packages.push({ slug, name, version, count: cards.length, media: r.mediaMap.size });
   const sus = state.filter((x) => x.suspended).length;

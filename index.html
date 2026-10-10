@@ -59,6 +59,7 @@
 import { createApi, createMockApi, stateOf } from './lib/api.js';
 import { mountBrowser } from './lib/browser.js';
 import { mediaBase } from './lib/config.js';
+import { applyAllEdits } from './lib/edits.js';
 import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
 
 const $ = (s) => document.querySelector(s);
@@ -91,11 +92,13 @@ async function boot() {
     const man = await (await fetch('data/manifest.json?v=' + Date.now())).json();
     S.manifest = man;
     await Promise.all(man.packages.map(async (p) => { S.content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${man.generated}`)).json(); }));
+    S.api0 = MOCK ? createMockApi(man, S.content) : (code.length === 16 ? createApi(code) : null);
+    if (S.api0) { try { applyAllEdits(S.content, await S.api0.getEdits()); } catch (e) { /* 读不到老师的修改就用原文 */ } }
     for (const p of man.packages) { S.cache[p.slug] = new Map(S.content[p.slug].cards.map((c) => [c.k, c])); }
-    if (MOCK) S.api = createMockApi(man, S.content);
+    if (MOCK) S.api = S.api0;
     else {
       if (code.length !== 16) return showCodeInput();
-      S.api = createApi(code);
+      S.api = S.api0;
     }
     try { S.pending = JSON.parse(lsGet('anki_test_pending') || '[]'); } catch (e) { S.pending = []; }
     if (S.pending.length) await flush();      // 上次没来得及保存的答案，先发出去再取最新进度
@@ -201,7 +204,7 @@ function showSettings(slug) {
 // ---------- 卡片浏览器：选今天学哪些 ----------
 function showBrowse(slug) {
   app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">管理卡片</div><span></span></div><div id="kb"></div>`;
-  app.style.maxWidth = '1100px';   // 浏览器要宽一点（左边筛选 + 右边表格）
+  app.style.maxWidth = '1100px'; app.style.setProperty('--kb-top', ($('#banner').offsetHeight) + 'px');   // 浏览器要宽一点（左边筛选 + 右边表格）
   $('#back').onclick = () => { app.style.maxWidth = ''; showHome(); };
   const apply = (keys, fn) => { for (const k of keys) { const c = S.cards.get(k); if (c) fn(c); } };
   mountBrowser($('#kb'), {

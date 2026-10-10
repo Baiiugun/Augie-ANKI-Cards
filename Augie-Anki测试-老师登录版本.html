@@ -41,6 +41,7 @@
 <script type="module">
 import { dayNumber } from './lib/anki-sched.js';
 import { mountBrowser } from './lib/browser.js';
+import { applyAllEdits, applyEdit, resetEdit, nextEdited } from './lib/edits.js';
 import { login, createTeacherApi, createMockTeacherApi } from './lib/teacher-api.js';
 
 const $ = (s) => document.querySelector(s);
@@ -71,6 +72,7 @@ async function loadAll() {
     manifest = await (await fetch('data/manifest.json?v=' + Date.now())).json();
     await Promise.all(manifest.packages.map(async (p) => { content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${manifest.generated}`)).json(); }));
     if (MOCK && !api) api = createMockTeacherApi(manifest, content);
+    try { applyAllEdits(content, await api.getEdits()); } catch (e) { /* 读不到修改就用原文 */ }
     learners = await api.listLearners();
     showLearners();
   } catch (e) {
@@ -170,6 +172,11 @@ function renderLearner(l, stats) {
   mountBrowser($('#kb'), {
     packages: manifest.packages, content, getStates: states, today: todayNo, canManage: true,
     loadReview: () => api.getReviewSummary(l.id),
+    edit: {
+      // 先写云端，成功了再改本页里的卡（失败就保持原样）；“和原文一样”的字段不存，全部一样就删掉这一行
+      save: async (key, changes) => { const ed = nextEdited(content, key, changes); await (Object.keys(ed).length ? api.saveEdit(key, ed) : api.deleteEdit(key)); applyEdit(content, key, changes); },
+      reset: async (key) => { await api.deleteEdit(key); resetEdit(content, key); },
+    },
     actions: {
       suspend: async (keys, flag) => { const n = await api.setSuspended(l.id, keys, flag); patch(keys, (c) => { c.suspended = flag; }); return n; },
       dueToday: async (keys) => { const n = await api.setDueToday(l.id, keys, todayNo()); patch(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > todayNo()) c.due = todayNo(); }); return n; },
