@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-10T01:09:58.516Z",
+ "generated": "2026-10-11T03:00:00.986Z",
  "note": "【临时测试系统】卡片文字内容；进度不在这里",
  "packages": [
   {
@@ -13,8 +13,8 @@
    "slug": "super-why",
    "name": "Super_WHY",
    "version": "20261009",
-   "count": 35,
-   "media": 106
+   "count": 46,
+   "media": 142
   },
   {
    "slug": "pinyin-learn",
