@@ -129,12 +129,12 @@ function showCodeInput() {
   $('#cb').onclick = () => { const c = normCode($('#ci').value); if (c.length !== 16) { alert('学习码是 16 位字母和数字'); return; } lsSet('anki_test_code', c); location.hash = ''; location.reload(); };
 }
 
-// ---------- 今天的计数（按"包"分别算，同 Anki 按牌组算上限） ----------
+// ---------- 今天的计数（按 Deck 分别算，同 Anki 按牌组算上限） ----------
 function todayCounts(slug) {
   const mine = S.log.filter((l) => l.key.startsWith(slug + ':'));
   return { newDone: new Set(mine.filter((l) => l.prev_type === 0).map((l) => l.key)).size, revDone: mine.filter((l) => l.type === 1).length };
 }
-// 每个包的每日上限：老师设的“每天”值，没设就用学生默认值；“仅今天”的设置当天优先（对应 Anki 的 Today only）
+// 每个 Deck 的每日上限：老师设的“每天”值，没设就用学生默认值；“仅今天”的设置当天优先（对应 Anki 的 Today only）
 function limitsFor(slug) {
   const st = S.settings[slug] || {};
   let n = st.new_per_day ?? S.learner.new_per_day, r = st.rev_per_day ?? S.learner.rev_per_day;
@@ -152,7 +152,7 @@ function queueFor(slugs) {
 }
 const qCounts = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.length + q.learnAhead.length, r: q.reviews.length });
 
-// ---------- 首页：包列表 ----------
+// ---------- 首页：Deck 列表 ----------
 function showHome() {
   S.session = null; stopAudio();
   const tot = queueFor(S.manifest.packages.map((p) => p.slug)), t = qCounts(tot);
@@ -160,11 +160,11 @@ function showHome() {
       <div class="name">${name}<small>${sub}</small></div>
       <div class="num n-new ${c.n ? '' : 'zero'}">${c.n}<i>新</i></div><div class="num n-learn ${c.l ? '' : 'zero'}">${c.l}<i>学习中</i></div><div class="num n-rev ${c.r ? '' : 'zero'}">${c.r}<i>复习</i></div>
       ${gear ? `<button class="gear" data-gear="${slug}" title="设置">⚙</button>` : ''}</div>`;
-  let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">点右边的 ⚙ 可以改这个包每天（或仅今天）学多少</div>`;
-  html += row('', '全部', '所有包一起学', t, false);
+  let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">点右边的 ⚙ 可以改这个 Deck 每天（或仅今天）学多少</div>`;
+  html += row('', '全部', '所有 Deck 一起学', t, false);
   for (const p of S.manifest.packages) {
     const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length, lim = limitsFor(p.slug);
-    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 挂起 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
+    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 暂停 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
   }
   html += `<p><button class="btn ghost" id="mg">📚 管理卡片（选今天学哪些）</button></p>`;
   if (MOCK) html += `<p class="sub">离线演示模式：进度只存在这台设备上。<a href="#" id="rs">清空演示进度</a></p>`;
@@ -175,7 +175,7 @@ function showHome() {
   $('#rs')?.addEventListener('click', (e) => { e.preventDefault(); S.api.reset(); location.reload(); });
 }
 
-// ---------- 设置：这个包今天/每天学多少 ----------
+// ---------- 设置：这个 Deck 今天/每天学多少 ----------
 function showSettings(slug) {
   const p = S.manifest.packages.find((x) => x.slug === slug), lim = limitsFor(slug), c = todayCounts(slug);
   let n = lim.newPerDay, r = lim.revPerDay;

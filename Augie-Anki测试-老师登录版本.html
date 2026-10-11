@@ -128,8 +128,8 @@ function renderLearner(l, stats) {
   const lim = (slug) => { const s = settings[slug] || {}; return { n: s.new_per_day, r: s.rev_per_day, tn: s.today_day === today ? s.today_new : null, tr: s.today_day === today ? s.today_rev : null }; };
   app.innerHTML = `<div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1></div>
 
-    <h2>每天学多少（每个包分别设置）</h2>
-    <div class="card scroll"><table><tr><th>包</th><th>每天新卡</th><th>每天复习</th><th>学生今天自己调过</th><th></th></tr>
+    <h2>每天学多少（每个 Deck 分别设置）</h2>
+    <div class="card scroll"><table><tr><th>Deck</th><th>每天新卡</th><th>每天复习</th><th>学生今天自己调过</th><th></th></tr>
     ${manifest.packages.map((p) => { const v = lim(p.slug); return `<tr><td>${esc(p.name)}</td>
       <td><input type="number" min="0" max="1000" id="ln-${p.slug}" value="${v.n ?? ''}" placeholder="${l.new_per_day}"></td>
       <td><input type="number" min="0" max="10000" id="lr-${p.slug}" value="${v.r ?? ''}" placeholder="${l.rev_per_day}"></td>
@@ -138,7 +138,7 @@ function renderLearner(l, stats) {
     <p class="mute">留空 = 用学生的默认值（新卡 ${l.new_per_day} / 复习 ${l.rev_per_day}，同 Anki 的默认设置）。学生在自己页面点 ⚙ 改的是“仅今天”，明天自动恢复为这里设的数字。</p><div id="setmsg"></div></div>
 
     <h2>学生能不能自己管理卡片</h2>
-    <div class="card"><label class="sw"><input type="checkbox" id="sm" ${l.self_manage === false ? '' : 'checked'}> 允许学生自己挂起 / 放出卡片、把卡设为今天复习（学生页的“管理卡片”）</label>
+    <div class="card"><label class="sw"><input type="checkbox" id="sm" ${l.self_manage === false ? '' : 'checked'}> 允许学生自己暂停 / 取消暂停卡片、把卡设为今天复习（学生页的“管理卡片”）</label>
     <p class="mute">关掉后，学生只能看，不能改；你仍然可以在下面的卡片管理里替他改。学生改“今天学几张”不受这个开关影响。</p></div>
 
     <h2>卡片管理：选今天学哪些</h2>
@@ -149,8 +149,8 @@ function renderLearner(l, stats) {
     ${stats.map((s) => `<tr><td>${s.day_date}</td><td>${s.new_cards}</td><td>${s.review_cards}</td><td>${s.answers}</td><td>${s.from_import ? '<span class="tag">含 Anki 历史</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">最近 14 天没有学习记录</td></tr>'}</table>
     <p class="mute">新学 = 当天第一次见到的卡；复习几张 = 当天复习过的卡（同一张只算一次）；答题几次 = 总答题次数。“含 Anki 历史”表示这天有一部分数据是从 Anki 导入的。</p></div>
 
-    <h2>各个包的进度</h2>
-    <div class="card scroll"><table><tr><th>包</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>挂起</th></tr>
+    <h2>各个 Deck 的进度</h2>
+    <div class="card scroll"><table><tr><th>Deck</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>暂停</th></tr>
     ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td></tr>`).join('')}</table></div>
 
     <h2>出测试</h2><div class="card mute">下一版做：勾选范围 → 随机抽 N 张 → 我自己测 / 发给他测。</div>`;
