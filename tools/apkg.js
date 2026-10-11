@@ -108,7 +108,7 @@ function readModelsAndDecks(db) {
  * Parse an .apkg.
  * @param file path to the uploaded file
  * @param mediaDir directory (will be created) where media files are stored as <sha1-16>.<ext>
- * @returns { models, decks, notes:[{id, mid, fields:[], tags:[]}], cards:[{id,nid,did,ord,sched}], revlog:[], crt, mediaMap: Map<name,file>, cleanup }
+ * @returns { models, decks, notes:[{id, mid, fields:[], tags:[]}], cards:[{id,nid,did,ord,flag,sched}], revlog:[], crt, mediaMap: Map<name,file>, cleanup }
  */
 export async function readApkg(file, mediaDir) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apkg-'));
@@ -150,8 +150,9 @@ export async function readApkg(file, mediaDir) {
         fields: n.flds.split('\x1f'),
         tags: n.tags.trim().split(/\s+/).filter(Boolean),
       }));
-      const cards = allBig(db, 'SELECT id, nid, CASE WHEN odid != 0 THEN odid ELSE did END AS did, ord, type, queue, due, ivl, factor, reps, lapses, left, odid, odue FROM cards ORDER BY id').map((c) => ({
+      const cards = allBig(db, 'SELECT id, nid, CASE WHEN odid != 0 THEN odid ELSE did END AS did, ord, type, queue, due, ivl, factor, reps, lapses, left, odid, odue, flags FROM cards ORDER BY id').map((c) => ({
         id: String(c.id), nid: String(c.nid), did: String(c.did), ord: Number(c.ord),
+        flag: Number(c.flags) & 7,   // Anki 的颜色标记：低 3 位（1 红 2 橙 3 绿 4 蓝 5 粉 6 青 7 紫，0 无）
         // Anki 调度字段（原样带出；筛选牌组里的卡 due 取 odue）
         sched: { type: Number(c.type), queue: Number(c.queue), due: Number(c.odid ? c.odue : c.due), ivl: Number(c.ivl), factor: Number(c.factor),
                  reps: Number(c.reps), lapses: Number(c.lapses), left: Number(c.left) },

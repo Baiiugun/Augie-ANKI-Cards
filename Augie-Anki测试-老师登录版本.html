@@ -118,9 +118,9 @@ const todayNo = () => dayNumber(Date.now());
 
 function renderLearner(l, stats) {
   const today = todayNo();
-  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, total: 0 };
+  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, flag: 0, total: 0 };
   for (const c of cardRows) {
-    const b = by[c.card_key.split(':')[0]]; if (!b) continue; b.total++;
+    const b = by[c.card_key.split(':')[0]]; if (!b) continue; b.total++; if (c.flag) b.flag++;
     if (c.suspended) { b.sus++; continue; }
     if (c.queue === 0) b.n++; else if (c.queue === 1 || c.queue === 3) b.l++; else b.r++;
     if (c.queue === 2 && c.due <= today) b.due++;
@@ -150,8 +150,8 @@ function renderLearner(l, stats) {
     <p class="mute">新学 = 当天第一次见到的卡；复习几张 = 当天复习过的卡（同一张只算一次）；答题几次 = 总答题次数。“含 Anki 历史”表示这天有一部分数据是从 Anki 导入的。</p></div>
 
     <h2>各个 Deck 的进度</h2>
-    <div class="card scroll"><table><tr><th>Deck</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>暂停</th></tr>
-    ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td></tr>`).join('')}</table></div>
+    <div class="card scroll"><table><tr><th>Deck</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>暂停</th><th>已标记</th></tr>
+    ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td><td>${b.flag}</td></tr>`).join('')}</table></div>
 
     <h2>出测试</h2><div class="card mute">下一版做：勾选范围 → 随机抽 N 张 → 我自己测 / 发给他测。</div>`;
   $('#bk').onclick = showLearners;
@@ -179,6 +179,7 @@ function renderLearner(l, stats) {
     },
     actions: {
       suspend: async (keys, flag) => { const n = await api.setSuspended(l.id, keys, flag); patch(keys, (c) => { c.suspended = flag; }); return n; },
+      flag: async (keys, flag) => { const n = await api.setFlag(l.id, keys, flag); patch(keys, (c) => { c.flag = flag; }); return n; },
       dueToday: async (keys) => { const n = await api.setDueToday(l.id, keys, todayNo()); patch(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > todayNo()) c.due = todayNo(); }); return n; },
     },
   });
