@@ -2,6 +2,7 @@
 // 两步，各自独立：
 //   第 1 步（不联网，AI 可以运行）：
 //     node add-cards.mjs prepare "<.apkg 路径>" [--slug super-why] [--live]
+//     新建一个全新的 Deck（data 里还没有它）：node add-cards.mjs prepare "<.apkg>" --slug <英文简称> --new-deck "<显示名>" [--live]
 //       · 追加卡片文字到 ../data/<slug>.json，更新 ../data/manifest.json 里该 Deck 的张数/媒体数/generated
 //       · 媒体解到 <项目>/import-work/media/<slug>/（私有区，不进 GitHub）
 //       · 把"要建的进度"写到 <项目>/import-work/add/<slug>-<包名>.json（**不是** state-*.json，不会被 upload.mjs 误读）
@@ -42,11 +43,20 @@ if (cmd === 'prepare') {
   const slug = opt('--slug') || (deckNames.length === 1 ? SLUGS[deckNames[0]] : null);
   if (!slug) { console.error('!! 不能确定要并入哪个 Deck：包里的牌组 =', deckNames, '；请加 --slug <已有的 Deck 简称>'); process.exit(1); }
   const dataFile = path.join(dataDir, `${slug}.json`);
-  if (!fs.existsSync(dataFile)) { console.error(`!! 找不到 ${dataFile}：这个工具只往【已有】的 Deck 里增补。`); process.exit(1); }
-
-  const rawOld = fs.readFileSync(dataFile, 'utf8');
-  const data = JSON.parse(rawOld);
-  if (JSON.stringify(data) !== rawOld) { console.error('!! 现有 data 文件读出再写回和原文不一致，为了不破坏已有卡片，停止。'); process.exit(1); }
+  // 已有的 Deck：追加；全新的 Deck：必须同时给 --new-deck "<显示名>"（会新建 data 文件和 manifest 里的一项）
+  const newName = opt('--new-deck');
+  let data;
+  if (fs.existsSync(dataFile)) {
+    if (newName) { console.error(`!! ${slug} 已经存在，不能再 --new-deck；去掉 --new-deck 就是往里增补。`); process.exit(1); }
+    const rawOld = fs.readFileSync(dataFile, 'utf8');
+    data = JSON.parse(rawOld);
+    if (JSON.stringify(data) !== rawOld) { console.error('!! 现有 data 文件读出再写回和原文不一致，为了不破坏已有卡片，停止。'); process.exit(1); }
+  } else {
+    if (!newName) { console.error(`!! 找不到 ${dataFile}。要新建一个 Deck 请加：--slug ${slug} --new-deck "<显示名>"`); process.exit(1); }
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) { console.error('!! --slug 只能用小写英文字母、数字和连字符（它会出现在卡片编号和媒体路径里）'); process.exit(1); }
+    data = { slug, name: newName, version: new Date().toISOString().slice(0, 10).replace(/-/g, ''), models: [], cards: [] };
+    console.log(`（新建 Deck：${slug} =「${newName}」）`);
+  }
   const have = new Set(data.cards.map((c) => c.k));
 
   const mediaDir = path.join(WORK, 'media', slug);
@@ -103,7 +113,8 @@ if (cmd === 'prepare') {
   fs.writeFileSync(dataFile, JSON.stringify(data));
   const mfFile = path.join(dataDir, 'manifest.json');
   const mf = JSON.parse(fs.readFileSync(mfFile, 'utf8'));
-  const pk = mf.packages.find((p) => p.slug === slug);
+  let pk = mf.packages.find((p) => p.slug === slug);
+  if (!pk) { pk = { slug, name: data.name, version: data.version, count: 0, media: 0 }; mf.packages.push(pk); }
   pk.count = data.cards.length;
   pk.media = fs.readdirSync(mediaDir).length;
   mf.generated = new Date().toISOString();     // 页面用它当缓存版本号，改了才会重新下载 data

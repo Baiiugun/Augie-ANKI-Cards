@@ -41,7 +41,7 @@
 <script type="module">
 import { dayNumber } from './lib/anki-sched.js';
 import { mountBrowser } from './lib/browser.js';
-import { applyAllEdits, applyEdit, resetEdit, nextEdited } from './lib/edits.js';
+import { applyAllEdits, applyTagRemovals, applyEdit, resetEdit, nextEdited } from './lib/edits.js';
 import { login, createTeacherApi, createMockTeacherApi } from './lib/teacher-api.js';
 
 const $ = (s) => document.querySelector(s);
@@ -73,6 +73,7 @@ async function loadAll() {
     await Promise.all(manifest.packages.map(async (p) => { content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${manifest.generated}`)).json(); }));
     if (MOCK && !api) api = createMockTeacherApi(manifest, content);
     try { applyAllEdits(content, await api.getEdits()); } catch (e) { /* 读不到修改就用原文 */ }
+    try { applyTagRemovals(content, await api.getTagRemovals()); } catch (e) { /* 读不到被删的标签就照原样显示 */ }
     learners = await api.listLearners();
     showLearners();
   } catch (e) {
@@ -118,9 +119,11 @@ const todayNo = () => dayNumber(Date.now());
 
 function renderLearner(l, stats) {
   const today = todayNo();
-  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, flag: 0, total: 0 };
+  const by = {}; for (const p of manifest.packages) by[p.slug] = { name: p.name, n: 0, l: 0, r: 0, due: 0, sus: 0, flag: 0, del: 0, total: 0 };
   for (const c of cardRows) {
-    const b = by[c.card_key.split(':')[0]]; if (!b) continue; b.total++; if (c.flag) b.flag++;
+    const b = by[c.card_key.split(':')[0]]; if (!b) continue;
+    if (c.deleted) { b.del++; continue; }   // 已删除的卡不计入“共”和各状态，单独一列
+    b.total++; if (c.flag) b.flag++;
     if (c.suspended) { b.sus++; continue; }
     if (c.queue === 0) b.n++; else if (c.queue === 1 || c.queue === 3) b.l++; else b.r++;
     if (c.queue === 2 && c.due <= today) b.due++;
@@ -138,7 +141,7 @@ function renderLearner(l, stats) {
     <p class="mute">留空 = 用学生的默认值（新卡 ${l.new_per_day} / 复习 ${l.rev_per_day}，同 Anki 的默认设置）。学生在自己页面点 ⚙ 改的是“仅今天”，明天自动恢复为这里设的数字。</p><div id="setmsg"></div></div>
 
     <h2>学生能不能自己管理卡片</h2>
-    <div class="card"><label class="sw"><input type="checkbox" id="sm" ${l.self_manage === false ? '' : 'checked'}> 允许学生自己暂停 / 取消暂停卡片、把卡设为今天复习（学生页的“管理卡片”）</label>
+    <div class="card"><label class="sw"><input type="checkbox" id="sm" ${l.self_manage === false ? '' : 'checked'}> 允许学生自己暂停 / 取消暂停 / 删除卡片和标签、把卡设为今天复习（学生页的“管理卡片”）</label>
     <p class="mute">关掉后，学生只能看，不能改；你仍然可以在下面的卡片管理里替他改。学生改“今天学几张”不受这个开关影响。</p></div>
 
     <h2>卡片管理：选今天学哪些</h2>
@@ -150,8 +153,8 @@ function renderLearner(l, stats) {
     <p class="mute">新学 = 当天第一次见到的卡；复习几张 = 当天复习过的卡（同一张只算一次）；答题几次 = 总答题次数。“含 Anki 历史”表示这天有一部分数据是从 Anki 导入的。</p></div>
 
     <h2>各个 Deck 的进度</h2>
-    <div class="card scroll"><table><tr><th>Deck</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>暂停</th><th>已标记</th></tr>
-    ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td><td>${b.flag}</td></tr>`).join('')}</table></div>
+    <div class="card scroll"><table><tr><th>Deck</th><th>共</th><th>新卡</th><th>学习中</th><th>复习</th><th>今天到期</th><th>暂停</th><th>已标记</th><th>已删除</th></tr>
+    ${Object.values(by).map((b) => `<tr><td>${esc(b.name)}</td><td>${b.total}</td><td>${b.n}</td><td>${b.l}</td><td>${b.r}</td><td>${b.due}</td><td>${b.sus}</td><td>${b.flag}</td><td>${b.del}</td></tr>`).join('')}</table></div>
 
     <h2>出测试</h2><div class="card mute">下一版做：勾选范围 → 随机抽 N 张 → 我自己测 / 发给他测。</div>`;
   $('#bk').onclick = showLearners;
@@ -180,6 +183,8 @@ function renderLearner(l, stats) {
     actions: {
       suspend: async (keys, flag) => { const n = await api.setSuspended(l.id, keys, flag); patch(keys, (c) => { c.suspended = flag; }); return n; },
       flag: async (keys, flag) => { const n = await api.setFlag(l.id, keys, flag); patch(keys, (c) => { c.flag = flag; }); return n; },
+      remove: async (keys, del) => { const n = await api.setDeleted(l.id, keys, del); patch(keys, (c) => { c.deleted = !!del; }); return n; },   // 删除 / 恢复：放进“已删除”，不是永久删除
+      removeTag: (keys, tag) => api.removeTag(keys, tag),
       dueToday: async (keys) => { const n = await api.setDueToday(l.id, keys, todayNo()); patch(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > todayNo()) c.due = todayNo(); }); return n; },
     },
   });

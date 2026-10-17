@@ -25,6 +25,7 @@
   .btn{background:var(--new);color:#fff;padding:14px 20px;font-size:17px;font-weight:600;width:100%}
   .btn.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
   .top{display:flex;align-items:center;gap:8px;margin:4px 0 8px}
+  .top.stk-top{position:sticky;z-index:4;background:var(--bg);margin:0;padding:4px 0 4px}
   .top .back{background:transparent;color:var(--mute);font-size:15px;padding:8px}
   .top .cnt{flex:1;text-align:center;font-size:20px;font-weight:700;letter-spacing:1px}
   .cnt span{padding:0 8px}.cnt .cur{text-decoration:underline;text-underline-offset:5px}
@@ -63,7 +64,7 @@
 import { createApi, createMockApi, stateOf } from './lib/api.js';
 import { mountBrowser } from './lib/browser.js';
 import { mediaBase } from './lib/config.js';
-import { applyAllEdits } from './lib/edits.js';
+import { applyAllEdits, applyTagRemovals } from './lib/edits.js';
 import { flagColor, flagName, flagSvg, toggleTarget, noSqlHint, pressable, showFlagMenu } from './lib/flag-ui.js';
 import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
 
@@ -99,6 +100,7 @@ async function boot() {
     await Promise.all(man.packages.map(async (p) => { S.content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${man.generated}`)).json(); }));
     S.api0 = MOCK ? createMockApi(man, S.content) : (code.length === 16 ? createApi(code) : null);
     if (S.api0) { try { applyAllEdits(S.content, await S.api0.getEdits()); } catch (e) { /* 读不到老师的修改就用原文 */ } }
+    if (S.api0) { try { applyTagRemovals(S.content, await S.api0.getTagRemovals()); } catch (e) { /* 读不到被删的标签就照原样显示 */ } }
     for (const p of man.packages) { S.cache[p.slug] = new Map(S.content[p.slug].cards.map((c) => [c.k, c])); }
     if (MOCK) S.api = S.api0;
     else {
@@ -117,9 +119,15 @@ async function refresh() {
   S.learner = r.learner; S.skew = r.nowMs - Date.now(); S.log = r.todayLog.map((x) => ({ key: x[0], prev_type: x[1], type: x[2] }));
   S.today = r.today; S.settings = r.settings || {};
   S.cards = new Map(r.cards.map((c) => [c.key, c]));
-  S.bySlug = new Map(S.manifest.packages.map((p) => [p.slug, []]));
-  for (const c of S.cards.values()) S.bySlug.get(c.key.split(':')[0])?.push(c);
+  rebuildBySlug();
 }
+// 各 Deck 里“没被删除”的卡（学习队列、首页数字都只看这些；已删除的卡留在 S.cards 里，管理卡片的“已删除”里能找回）
+function rebuildBySlug() {
+  S.bySlug = new Map(S.manifest.packages.map((p) => [p.slug, []]));
+  for (const c of S.cards.values()) if (!c.deleted) S.bySlug.get(c.key.split(':')[0])?.push(c);
+}
+// 还有没删的卡的 Deck（整个 Deck 被删了、或者还没有进度的 Deck 都不列出）
+const livePackages = () => S.manifest.packages.filter((p) => (S.bySlug.get(p.slug) || []).length);
 
 function showError(e) {
   const bad = e.message === 'invalid code' || e.message === 'bad code';
@@ -160,16 +168,16 @@ const qCounts = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.le
 // ---------- 首页：Deck 列表 ----------
 function showHome() {
   S.session = null; stopAudio();
-  const tot = queueFor(S.manifest.packages.map((p) => p.slug)), t = qCounts(tot);
+  const packs = livePackages(), tot = queueFor(packs.map((p) => p.slug)), t = qCounts(tot);
   const row = (slug, name, sub, c, gear) => `<div class="deck" data-slug="${slug}">
       <div class="name">${name}<small>${sub}</small></div>
       <div class="num n-new ${c.n ? '' : 'zero'}">${c.n}<i>新</i></div><div class="num n-learn ${c.l ? '' : 'zero'}">${c.l}<i>学习中</i></div><div class="num n-rev ${c.r ? '' : 'zero'}">${c.r}<i>复习</i></div>
       ${gear ? `<button class="gear" data-gear="${slug}" title="设置">⚙</button>` : ''}</div>`;
   let html = `<h1>${S.learner.name}，今天要学</h1><div class="sub">点右边的 ⚙ 可以改这个 Deck 每天（或仅今天）学多少</div>`;
   html += row('', '全部', '所有 Deck 一起学', t, false);
-  for (const p of S.manifest.packages) {
+  for (const p of packs) {
     const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length, lim = limitsFor(p.slug);
-    html += row(p.slug, p.name, `${p.count} 张${sus ? ` · 暂停 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
+    html += row(p.slug, p.name, `${(S.bySlug.get(p.slug) || []).length} 张${sus ? ` · 暂停 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
   }
   html += `<p><button class="btn ghost" id="mg">📚 管理卡片（选今天学哪些）</button></p>`;
   if (MOCK) html += `<p class="sub">离线演示模式：进度只存在这台设备上。<a href="#" id="rs">清空演示进度</a></p>`;
@@ -208,17 +216,21 @@ function showSettings(slug) {
 
 // ---------- 卡片浏览器：选今天学哪些 ----------
 function showBrowse(slug) {
-  app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">管理卡片</div><span></span></div><div id="kb"></div>`;
-  app.style.maxWidth = '1100px'; app.style.setProperty('--kb-top', ($('#banner').offsetHeight) + 'px');   // 浏览器要宽一点（左边筛选 + 右边表格）
+  app.innerHTML = `<div class="top stk-top" id="kb-head"><button class="back" id="back">← 返回</button><div class="cnt" style="font-size:17px">管理卡片</div><span></span></div><div id="kb"></div>`;
+  // 吸顶：橙色横幅 → “返回 / 管理卡片”标题行 → 浏览器自己的搜索/操作栏/表头；--kb-top = 前两样加起来的高度
+  const bh = $('#banner').offsetHeight; $('#kb-head').style.top = bh + 'px';
+  app.style.maxWidth = '1100px'; app.style.setProperty('--kb-top', (bh + $('#kb-head').offsetHeight + 4) + 'px');   // 浏览器要宽一点（左边筛选 + 右边表格）
   $('#back').onclick = () => { app.style.maxWidth = ''; showHome(); };
   const apply = (keys, fn) => { for (const k of keys) { const c = S.cards.get(k); if (c) fn(c); } };
   mountBrowser($('#kb'), {
-    packages: S.manifest.packages, content: S.content, startSlug: slug || S.manifest.packages[0].slug,
+    packages: S.manifest.packages, content: S.content, startSlug: slug || (livePackages()[0] || S.manifest.packages[0]).slug,
     getStates: () => S.cards, today: () => S.today, canManage: !!S.learner.self_manage,
     loadReview: () => S.api.getReviewSummary(),
     actions: {
       suspend: async (keys, flag) => { const n = await S.api.setSuspended(keys, flag); apply(keys, (c) => { c.suspended = flag; }); return n; },
       flag: async (keys, flag) => { const n = await S.api.setFlag(keys, flag); apply(keys, (c) => { c.flag = flag; }); return n; },
+      remove: async (keys, del) => { const n = await S.api.setDeleted(keys, del); apply(keys, (c) => { c.deleted = !!del; }); rebuildBySlug(); return n; },   // 删除 / 恢复：放进“已删除”，不是永久删除
+      removeTag: (keys, tag) => S.api.removeTag(keys, tag),
       dueToday: async (keys) => { const n = await S.api.setDueToday(keys); apply(keys, (c) => { if (c.type === 2 && c.queue === 2 && c.due > S.today) c.due = S.today; }); return n; },
     },
   });
@@ -231,7 +243,7 @@ function stopAudio() { playToken++; if (player) { try { player.pause(); } catch 
 function startStudy(slug) {
   // 第一次点击里"解锁"音频（iPad/Safari 必须由用户点击才允许发声）
   if (!player) { player = new Audio(); player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; player.play().catch(() => {}); }
-  const slugs = slug ? [slug] : S.manifest.packages.map((p) => p.slug);
+  const slugs = slug ? [slug] : livePackages().map((p) => p.slug);
   S.session = { slugs, shownNew: 0, shownRev: 0, cur: null, showing: 'q', t0: 0 };
   app.innerHTML = `<div class="top"><button class="back" id="back">← 返回</button><div class="cnt" id="cnt"></div><button class="flag" id="flag" disabled title="标记这张卡（做错了、有问题）：短按 = 红旗，再短按 = 取消；长按 = 选其他颜色。电脑上也可以按 Ctrl+1…7"></button><button class="undo" id="undo" disabled>撤销</button></div>
     <div id="cardbox"></div><div id="foot"></div>`;
