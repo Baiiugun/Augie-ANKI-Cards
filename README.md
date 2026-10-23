@@ -24,7 +24,7 @@
 | `lib/api.js`、`lib/teacher-api.js`、`lib/config.js` | 学生页 / 老师页和 Supabase 通话、公开配置（anon 公开密钥）；`?mock=1` 离线演示用 `lib/mock-store.js` |
 | `lib/browser.js` | 卡片浏览器（搜索、按状态筛选、选中后暂停 / 取消暂停 / 设为今天复习），学生页和老师页共用 |
 | `data/` | 卡片文字内容（`manifest.json` + 每个 Deck 一个 json），**不含进度** |
-| `tools/` | 导入程序：`build-content.mjs` 拆 .apkg，`upload.mjs` 上传媒体并导入进度（在老师电脑上运行） |
+| `tools/` | 导入程序：`build-content.mjs` 拆 .apkg，`upload.mjs` 上传媒体并导入进度（在老师电脑上运行，需要 Node >= 22.23.4） |
 | `test/` | 用真实 Anki 答题记录检验调度规则的脚本 |
 
 ## 这个仓库里放什么、不放什么

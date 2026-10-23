@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "description": "【临时测试系统】把 Anki .apkg 拆成网页卡片内容并上传（在老师电脑上运行，密码只在终端里输入）",
-  "engines": { "node": ">=22.15" },
+  "engines": { "node": ">=22.23.4" },
   "dependencies": { "yauzl": "^3.4.0" }
 }
