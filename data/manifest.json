@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-17T06:49:19.997Z",
+ "generated": "2026-10-30T08:59:48.761Z",
  "note": "【临时测试系统】卡片文字内容；进度不在这里",
  "packages": [
   {
@@ -50,6 +50,13 @@
    "version": "20261017",
    "count": 49,
    "media": 72
+  },
+  {
+   "slug": "math-grade1-errors",
+   "name": "一年级数学·错题练习",
+   "version": "20261030",
+   "count": 40,
+   "media": 0
   }
  ]
 }
