@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-04T13:45:01.140Z",
+ "generated": "2026-11-04T14:10:50.464Z",
  "note": "【临时测试系统】卡片文字内容；进度不在这里",
  "packages": [
   {
@@ -45,7 +45,7 @@
    "media": 139
   },
   {
-   "slug": "english-g1a-u01-03",
+   "slug": "english-g1a",
    "name": "英语教材词汇及用法",
    "version": "20261104",
    "count": 99,
