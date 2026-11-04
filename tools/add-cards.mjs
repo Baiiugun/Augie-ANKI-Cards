@@ -54,6 +54,14 @@ if (cmd === 'prepare') {
   } else {
     if (!newName) { console.error(`!! 找不到 ${dataFile}。要新建一个 Deck 请加：--slug ${slug} --new-deck "<显示名>"`); process.exit(1); }
     if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) { console.error('!! --slug 只能用小写英文字母、数字和连字符（它会出现在卡片编号和媒体路径里）'); process.exit(1); }
+    // 2026-11-04 教训：同一个 Anki 牌组分几批做出来（如 Unit01-03、Unit04-06），必须并进【同一个】Deck、用 tag 区分，不能每批新建一个 Deck。
+    // 所以：新 Deck 的显示名和已有 Deck 重名、或者这个包的牌组名已经在某个 Deck 里出现过 → 停下，提示用 --slug 并入。确实要分开时加 --force-new-deck。
+    if (!has('--force-new-deck')) {
+      const mf0 = JSON.parse(fs.readFileSync(path.join(dataDir, 'manifest.json'), 'utf8'));
+      const hit = mf0.packages.find((p) => p.name === newName || deckNames.includes(p.name)
+        || (fs.existsSync(path.join(dataDir, `${p.slug}.json`)) && JSON.parse(fs.readFileSync(path.join(dataDir, `${p.slug}.json`), 'utf8')).cards.some((c) => deckNames.includes(c.d))));
+      if (hit) { console.error(`!! 这个包的牌组「${deckNames.join('、')}」已经在 Deck「${hit.name}」（${hit.slug}）里了。同一个牌组的新一批卡应该并进去：\n   node add-cards.mjs prepare "<.apkg>" --slug ${hit.slug}\n   （确实要另建一个 Deck，再加 --force-new-deck）`); process.exit(1); }
+    }
     data = { slug, name: newName, version: new Date().toISOString().slice(0, 10).replace(/-/g, ''), models: [], cards: [] };
     console.log(`（新建 Deck：${slug} =「${newName}」）`);
   }
