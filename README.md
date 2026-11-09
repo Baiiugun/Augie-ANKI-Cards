@@ -12,6 +12,9 @@
 
 - 背词页面（Augie 用，需要带学习码的链接才能进）：https://baiiugun.github.io/Augie-ANKI-Cards/
 - 老师页面（登录后用）：https://baiiugun.github.io/Augie-ANKI-Cards/Augie-Anki测试-老师登录版本.html
+- 高中“阅读词”学生页（要带老师发的专属链接）：https://baiiugun.github.io/Augie-ANKI-Cards/阅读词.html
+- 阅读词老师页（登录后用：建学生、布置试卷词库、看进度）：https://baiiugun.github.io/Augie-ANKI-Cards/阅读词-老师登录版本.html
+  （阅读词的卡片内容存在 Supabase，**不在本仓库**；需要先运行 `10-Augie-Anki测试系统-阅读词与布置.sql`。）
 - 状态：**测试中**。背词页和老师页都已发布，但数据库那一步（`04-Augie-Anki测试系统-建表.sql`）要由老师在 Supabase 里运行后才能真正使用。
 
 ## 目录
@@ -23,6 +26,8 @@
 | `lib/anki-sched.js` | Anki 旧调度（SM-2）的复刻，参数 = Augie 的 Anki 默认预设 |
 | `lib/api.js`、`lib/teacher-api.js`、`lib/config.js` | 学生页 / 老师页和 Supabase 通话、公开配置（anon 公开密钥）；`?mock=1` 离线演示用 `lib/mock-store.js` |
 | `lib/browser.js` | 卡片浏览器（搜索、按状态筛选、选中后暂停 / 取消暂停 / 设为今天复习），学生页和老师页共用 |
+| `阅读词.html`、`阅读词-老师登录版本.html`、`lib/yuedu-api.js` | 高中“阅读词”：学生选试卷/篇章背词、“不再背诵”和 3 步撤销；老师建学生、按试卷→板块布置、看进度（`?mock=1` 离线演示） |
+| `tools/yuedu-bank.mjs` | 把一个试卷词库包（每个板块一个 .apkg）存进 Supabase 的阅读词词库 |
 | `data/` | 卡片文字内容（`manifest.json` + 每个 Deck 一个 json），**不含进度** |
 | `tools/` | 导入程序：`build-content.mjs` 拆 .apkg，`upload.mjs` 上传媒体并导入进度（在老师电脑上运行，需要 Node >= 22.23.4） |
 | `test/` | 用真实 Anki 答题记录检验调度规则的脚本 |

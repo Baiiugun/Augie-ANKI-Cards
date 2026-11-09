@@ -74,7 +74,7 @@ async function loadAll() {
     if (MOCK && !api) api = createMockTeacherApi(manifest, content);
     try { applyAllEdits(content, await api.getEdits()); } catch (e) { /* 读不到修改就用原文 */ }
     try { applyTagRemovals(content, await api.getTagRemovals()); } catch (e) { /* 读不到被删的标签就照原样显示 */ }
-    learners = await api.listLearners();
+    learners = (await api.listLearners()).filter((l) => l.kind !== 'yuedu');   // 高中“阅读词”学生在「阅读词-老师登录版本」里管理，这里不显示
     showLearners();
   } catch (e) {
     if (/JWT|expired|401/i.test(e.message) || e.status === 401) return (ssSet('anki_test_teacher_token', null), showLogin('登录过期，请重新登录'));
@@ -94,7 +94,8 @@ function showLearners() {
       <div class="link">${esc(linkOf(l))}</div>
       <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">进入管理</button></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
     ${MOCK ? '' : `<h2>新增学生</h2><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
-    <p class="mute">学生链接 = 学生的“钥匙”，不要贴到公开的地方。</p>`;
+    <p class="mute">学生链接 = 学生的“钥匙”，不要贴到公开的地方。</p>
+    <p class="mute">高中阅读词的学生（布置试卷词库）在另一个页面管理：<a href="阅读词-老师登录版本.html${MOCK ? '?mock=1' : ''}">阅读词-老师登录版本 →</a></p>`;
   $('#lo')?.addEventListener('click', logout);
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '请手动复制上面的链接'; } });
   app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openLearner(learners.find((x) => x.id === b.dataset.open)));

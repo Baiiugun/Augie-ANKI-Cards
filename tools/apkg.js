@@ -145,8 +145,8 @@ export async function readApkg(file, mediaDir) {
     const db = readCollection(tmp);
     try {
       const { models, decks } = readModelsAndDecks(db);
-      const notes = allBig(db, 'SELECT id, mid, tags, flds FROM notes ORDER BY id').map((n) => ({
-        id: String(n.id), mid: String(n.mid),
+      const notes = allBig(db, 'SELECT id, guid, mid, tags, flds FROM notes ORDER BY id').map((n) => ({
+        id: String(n.id), guid: String(n.guid), mid: String(n.mid),   // guid = Anki 笔记的固定编号（词库包改版也不变；阅读词用它算卡片编号）
         fields: n.flds.split('\x1f'),
         tags: n.tags.trim().split(/\s+/).filter(Boolean),
       }));
