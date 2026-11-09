@@ -128,13 +128,15 @@ function render() { if (view === 'bank') return showBank(); if (view === 'studen
 function showList() {
   view = 'list';
   const rows = learners.map((l) => isYd(l)
-    ? `<tr><td><b>${esc(l.name)}</b></td><td><span class="chip">高中阅读词</span></td><td class="sub">${fmtTime(l.last_active)}</td>
-        <td style="text-align:right;white-space:nowrap"><button data-copy="${l.id}">复制链接</button> <button class="pri" data-open="${l.id}">进入</button></td></tr>`
+    ? `<tr><td><b>${esc(l.name)}</b>${l.status === 'paused' ? ' <span class="chip old">已停用</span>' : ''}</td><td><span class="chip">高中阅读词</span></td><td class="sub">${fmtTime(l.last_active)}</td>
+        <td style="text-align:right;white-space:nowrap"><button data-copy="${l.id}">复制链接</button> <button class="pri" data-open="${l.id}">进入</button>
+          <button class="ghost" data-pause="${l.id}" title="停用后学生链接打不开，数据全部保留">${l.status === 'paused' ? '恢复启用' : '停用'}</button><span data-delslot="${l.id}"></span></td></tr>`
     : `<tr><td><b>${esc(l.name)}</b></td><td><span class="chip old">低年级多 Deck 版</span></td><td class="sub">${fmtTime(l.last_active)}</td>
         <td style="text-align:right"><a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}">去原来的老师页 →</a></td></tr>`).join('');
   app.innerHTML = `${nav()}
     <div class="card"><h2>学生</h2><div class="tbl-wrap"><table><thead><tr><th>学生</th><th>类型</th><th>最近打开</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="sub">还没有学生</td></tr>'}</tbody></table></div>
-      <p class="faint">学生链接 = 学生的“钥匙”，不要贴到公开的地方。低年级多 Deck 版（Augie）仍用原来的页面，这里不改它。</p></div>
+      <p class="faint">学生链接 = 学生的“钥匙”，不要贴到公开的地方。低年级多 Deck 版（Augie）仍用原来的页面，这里不改它。<br>
+        停用 = 链接暂时打不开，数据全部保留；删除 = 永久删掉，只有还没背过任何词的学生（比如建错了）才会出现“删除”按钮。</p></div>
     <div class="card"><h2>新增阅读词学生</h2>
       <div class="row"><input type="text" id="nn" placeholder="学生名字，如 LXH-刘芯合" maxlength="40" style="width:240px"><button class="pri" id="add">新增并生成专属链接</button></div>
       <div class="msg" id="addmsg"></div>
@@ -142,6 +144,20 @@ function showList() {
   bindNav();
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '复制失败，进入后手动复制'; } });
   app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => { cur = learners.find((x) => x.id === b.dataset.open); view = 'student'; openLearner(cur); });
+  // 停用 / 恢复启用：停用后学生链接打不开，数据全部保留
+  app.querySelectorAll('[data-pause]').forEach((b) => b.onclick = async () => {
+    const l = learners.find((x) => x.id === b.dataset.pause), next = l.status === 'paused' ? 'active' : 'paused';
+    if (next === 'paused' && !confirm(`停用「${l.name}」？\n停用后他的链接打不开；进度和答题记录都保留，随时可以“恢复启用”。`)) return;
+    try { await api.updateLearner(l.id, { status: next }); learners = await api.listLearners(); showList(); } catch (e) { alert('失败：' + e.message); }
+  });
+  // 删除：只给“没有任何答题记录”的学生（建错了的）；有记录的只能停用
+  for (const l of learners.filter(isYd)) {
+    const slot = app.querySelector(`[data-delslot="${l.id}"]`); if (!slot) continue;
+    api.hasRecords(l.id).then((has) => {
+      slot.innerHTML = has ? '' : ' <button class="ghost" style="color:var(--learn)">删除</button>';
+      slot.querySelector('button')?.addEventListener('click', () => deleteLearner(l));
+    }).catch(() => { slot.innerHTML = ''; });
+  }
   $('#add').onclick = async () => {
     const name = $('#nn').value.trim(); if (!name) return;
     const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', rnd = crypto.getRandomValues(new Uint8Array(16)), code = Array.from(rnd, (b) => A[b % 32]).join('');
@@ -151,6 +167,16 @@ function showList() {
       cur = learners.find((l) => l.code === code); view = 'student'; openLearner(cur, `已新增 ${name}。下一步：在下面给他布置词库，再把专属链接发给他。`);
     } catch (e) { $('#addmsg').innerHTML = `<span class="err">失败：${esc(e.message)}${noSql(e.message)}</span>`; $('#add').disabled = false; }
   };
+}
+
+async function deleteLearner(l) {
+  try { if (await api.hasRecords(l.id)) return alert(`「${l.name}」已经有学习记录，不能删除。不想让他用可以点“停用”。`); }
+  catch (e) { return alert('检查失败：' + e.message); }
+  const typed = prompt(`永久删除学生「${l.name}」？\n他的链接会失效，布置记录也一起删掉，删除后找不回来。\n\n确认请输入学生名字：`);
+  if (typed == null) return;
+  if (typed.trim() !== l.name) return alert('名字不一致，没有删除。');
+  try { const n = await api.deleteLearner(l.id); if (!n) throw new Error('没有删掉（可能已经被删了）'); learners = await api.listLearners(); cur = null; showList(); }
+  catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ---------- 单个学生 ----------

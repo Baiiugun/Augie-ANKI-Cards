@@ -90,20 +90,45 @@ function showLearners() {
   cur = null;
   app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>学生</h1>${MOCK ? '<span class="tag">离线演示</span>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${learners.map((l) => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:18px">${esc(l.name)}</b>
-      <span class="mute">最近活跃：${fmtTime(l.last_active)} · 状态：${esc(l.status)}</span></div>
+      <span class="mute">最近活跃：${fmtTime(l.last_active)} · ${l.status === 'active' ? '正在使用' : l.status === 'paused' ? '<b style="color:var(--red)">已停用（链接打不开）</b>' : esc(l.status)}</span></div>
       <div class="link">${esc(linkOf(l))}</div>
-      <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">进入管理</button></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
-    ${MOCK ? '' : `<h2>新增学生</h2><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
+      <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">进入管理</button>
+        <span style="flex:1"></span><button class="ghost sm" data-pause="${l.id}">${l.status === 'paused' ? '恢复启用' : '停用'}</button><span data-delslot="${l.id}"></span></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
+    ${MOCK ? '' : `<h2>新增学生（低年级多 Deck 版，和 Augie 一样）</h2><p class="mute">⚠️ 高中“阅读词”学生不要在这里建，请到 <a href="阅读词-老师登录版本.html">阅读词-老师登录版本</a> 新增。</p><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
     <p class="mute">学生链接 = 学生的“钥匙”，不要贴到公开的地方。</p>
     <p class="mute">高中阅读词的学生（布置试卷词库）在另一个页面管理：<a href="阅读词-老师登录版本.html${MOCK ? '?mock=1' : ''}">阅读词-老师登录版本 →</a></p>`;
   $('#lo')?.addEventListener('click', logout);
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '请手动复制上面的链接'; } });
   app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openLearner(learners.find((x) => x.id === b.dataset.open)));
+  // 停用 / 恢复启用：停用后学生链接打不开，数据全部保留
+  app.querySelectorAll('[data-pause]').forEach((b) => b.onclick = async () => {
+    const l = learners.find((x) => x.id === b.dataset.pause), next = l.status === 'paused' ? 'active' : 'paused';
+    if (next === 'paused' && !confirm(`停用「${l.name}」？\n停用后他的链接打不开；进度和答题记录都保留，随时可以“恢复启用”。`)) return;
+    try { await api.updateLearner(l.id, { status: next }); await loadAll(); } catch (e) { alert('失败：' + e.message); }
+  });
+  // 删除：只给“没有任何答题记录”的学生（建错了的）；有记录的只能停用
+  for (const l of learners) {
+    const slot = app.querySelector(`[data-delslot="${l.id}"]`); if (!slot) continue;
+    api.hasRecords(l.id).then((has) => {
+      slot.innerHTML = has ? '<span class="mute">有学习记录，不能删除</span>' : '<button class="ghost sm" style="color:var(--red)">删除学生</button>';
+      slot.querySelector('button')?.addEventListener('click', () => deleteLearner(l));
+    }).catch(() => { slot.innerHTML = ''; });
+  }
   $('#add')?.addEventListener('click', async () => {
     const name = $('#nn').value.trim(); if (!name) return;
     const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', rnd = crypto.getRandomValues(new Uint8Array(16)), code = Array.from(rnd, (b) => A[b % 32]).join('');
     try { await api.addLearner(name, code); await loadAll(); } catch (e) { $('#addmsg').textContent = '失败：' + e.message; }
   });
+}
+
+async function deleteLearner(l) {
+  try { if (await api.hasRecords(l.id)) return alert(`「${l.name}」已经有学习记录，不能删除。不想让他用可以点“停用”。`); }
+  catch (e) { return alert('检查失败：' + e.message); }
+  const typed = prompt(`永久删除学生「${l.name}」？\n他的链接会失效，删除后找不回来。\n\n确认请输入学生名字：`);
+  if (typed == null) return;
+  if (typed.trim() !== l.name) return alert('名字不一致，没有删除。');
+  try { const n = await api.deleteLearner(l.id); if (!n) throw new Error('没有删掉（可能已经被删了）'); await loadAll(); }
+  catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ---------- 单个学生 ----------
