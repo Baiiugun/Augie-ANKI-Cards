@@ -124,9 +124,9 @@ function showLearners() {
 async function deleteLearner(l) {
   try { if (await api.hasRecords(l.id)) return alert(`「${l.name}」已经有学习记录，不能删除。不想让他用可以点“停用”。`); }
   catch (e) { return alert('检查失败：' + e.message); }
-  const typed = prompt(`永久删除学生「${l.name}」？\n他的链接会失效，删除后找不回来。\n\n确认请输入学生名字：`);
+  const typed = prompt(`永久删除学生「${l.name}」？\n\n会删掉：这个学生、他的链接、他的进度和设置。删除后找不回来。\n不会删：卡片 / 词库、其他学生的任何东西。\n\n确认请输入学生的完整姓名：${l.name}`);
   if (typed == null) return;
-  if (typed.trim() !== l.name) return alert('名字不一致，没有删除。');
+  if (typed.trim() !== l.name) return alert('输入的姓名和「' + l.name + '」不完全一样，没有删除。');
   try { const n = await api.deleteLearner(l.id); if (!n) throw new Error('没有删掉（可能已经被删了）'); await loadAll(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
