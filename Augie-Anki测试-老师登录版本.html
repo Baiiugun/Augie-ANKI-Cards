@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Augie-Anki测试-老师登录版本</title>
+<title>家庭版-老师登录版本</title>
 <style>
   :root{--bg:#f6f7f9;--card:#fff;--ink:#222;--mute:#8a8f98;--line:#e3e6ea;--blue:#1e6fff;--red:#e03131;--green:#2b9a4a;--warn:#ff9800}
   @media (prefers-color-scheme:dark){:root{--bg:#15171a;--card:#1f2226;--ink:#e8e8e8;--mute:#8d939c;--line:#31353b;--blue:#5b9bff;--red:#ff6b6b;--green:#51cf66}}
@@ -35,7 +35,7 @@
 </style>
 </head>
 <body>
-<div id="banner">⚠️ 临时测试系统 · 测试版 · 老师登录版本</div>
+<div id="banner">⚠️ 测试版 · 家庭学习 · 老师登录版本　<a href="阅读词-老师登录版本.html">学生版 →</a></div>
 <main id="app"></main>
 
 <script type="module">
@@ -88,15 +88,15 @@ const fmtTime = (s) => (s ? new Date(s).toLocaleString('zh-CN', { hour12: false 
 const linkOf = (l) => `${PAGE_BASE}#k=${l.code}`;
 function showLearners() {
   cur = null;
-  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>学生</h1>${MOCK ? '<span class="tag">离线演示</span>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
+  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>家庭学习者</h1>${MOCK ? '<span class="tag">离线演示</span>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${learners.map((l) => `<div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:18px">${esc(l.name)}</b>
       <span class="mute">最近活跃：${fmtTime(l.last_active)} · ${l.status === 'active' ? '正在使用' : l.status === 'paused' ? '<b style="color:var(--red)">已停用（链接打不开）</b>' : esc(l.status)}</span></div>
       <div class="link">${esc(linkOf(l))}</div>
       <div class="row"><button class="ghost" data-copy="${l.id}">复制学生链接</button><button data-open="${l.id}">进入管理</button>
         <span style="flex:1"></span><button class="ghost sm" data-pause="${l.id}">${l.status === 'paused' ? '恢复启用' : '停用'}</button><span data-delslot="${l.id}"></span></div></div>`).join('') || '<p class="mute">还没有学生。运行导入程序会自动创建 Augie；也可以在下面新增。</p>'}
-    ${MOCK ? '' : `<h2>新增学生（低年级多 Deck 版，和 Augie 一样）</h2><p class="mute">⚠️ 高中“阅读词”学生不要在这里建，请到 <a href="阅读词-老师登录版本.html">阅读词-老师登录版本</a> 新增。</p><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
+    ${MOCK ? '' : `<h2>新增家庭学习者</h2><p class="mute">教学学生请到 <a href="阅读词-老师登录版本.html">阅读词-老师登录版本</a> 新增。</p><div class="card row"><input id="nn" placeholder="学生名字" maxlength="40"><button id="add">新增并生成学习码</button><span id="addmsg" class="mute"></span></div>`}
     <p class="mute">学生链接 = 学生的“钥匙”，不要贴到公开的地方。</p>
-    <p class="mute">高中阅读词的学生（布置试卷词库）在另一个页面管理：<a href="阅读词-老师登录版本.html${MOCK ? '?mock=1' : ''}">阅读词-老师登录版本 →</a></p>`;
+    <p class="mute">教学词库的导入、分类和学生分配：<a href="阅读词-老师登录版本.html${MOCK ? '?mock=1' : ''}">学生版 · 词库与布置 →</a></p>`;
   $('#lo')?.addEventListener('click', logout);
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '请手动复制上面的链接'; } });
   app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openLearner(learners.find((x) => x.id === b.dataset.open)));

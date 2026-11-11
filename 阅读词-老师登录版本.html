@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>阅读词-老师登录版本</title>
+<title>学生版词库与布置-老师登录版本</title>
 <style>
   :root{--bg:#f5f6f8;--card:#fff;--ink:#1c2230;--sub:#5f6877;--faint:#8b93a1;--line:#e2e5ea;--acc:#2f6fdb;--acc-ink:#fff;--acc-weak:#e9f0fd;--new:#2f6fdb;--learn:#d4453c;--rev:#2a9a49;--sus:#b27a00;--sus-bg:#fff6dc;--ok-bg:#e8f6ec;--warn:#ff9800;--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 14px rgba(0,0,0,.05)}
   @media (prefers-color-scheme:dark){:root{--bg:#13161b;--card:#1c2027;--ink:#e6e9ef;--sub:#a1a9b6;--faint:#7b8494;--line:#2d333d;--acc:#6b9cf4;--acc-ink:#0d1320;--acc-weak:#1f2c44;--new:#6b9cf4;--learn:#ef7a71;--rev:#5ec27b;--sus:#e2b440;--sus-bg:#362c18;--ok-bg:#1b3324;--shadow:none}}
@@ -58,18 +58,20 @@
 </style>
 </head>
 <body>
-<div id="banner">⚠️ 测试版 · 阅读词 · 老师登录版本</div>
+<div id="banner">⚠️ 测试版 · 学生版 · 老师登录版本</div>
 <main id="app"><p class="faint">加载中…</p></main>
 
 <script type="module">
 import { dayNumber } from './lib/anki-sched.js';
 import { login } from './lib/teacher-api.js';
 import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js';
+import { mountLibrary } from './lib/teaching-library.js';
+import { mountUpload } from './lib/teaching-upload.js';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 const TEACHER_EMAIL = 'baiyuguang@gmail.com';
-const PAGE_BASE = location.origin + location.pathname.replace(/[^/]*$/, '');
+const PAGE_BASE = location.hostname === '127.0.0.1' && !location.search.includes('mock=1') ? 'https://baiiugun.github.io/Augie-ANKI-Cards/' : location.origin + location.pathname.replace(/[^/]*$/, '');
 const MOCK = new URLSearchParams(location.search).get('mock') === '1';
 const MOCK_Q = MOCK ? location.search : '';
 const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
@@ -78,11 +80,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const fmtTime = (s) => (s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '—');
 const fmtDay = (s) => (s ? new Date(s).toLocaleDateString('zh-CN') : '');
 const isYd = (l) => l.kind === 'yuedu';
-const linkOf = (l) => `${PAGE_BASE}${isYd(l) ? '阅读词.html' : ''}#k=${l.code}`;
+// Keep working before the new homepage is published; the homepage also accepts either kind of code.
+const linkOf = (l) => `${PAGE_BASE}阅读词.html#k=${l.code}`;
 const noSql = (m) => (/kind|anki_test_bank|anki_test_assign|anki_test_teacher_assign|does not exist|schema cache/i.test(String(m)) ? '（数据库还没运行 10 号 SQL：sql\\10-Augie-Anki测试系统-阅读词与布置.sql）' : '');
-const secTitle = (s) => (s.board === '阅读' || s.piece ? `${s.board} · ${s.piece}` : s.board);
+const secTitle = (s) => s.label || [s.board, s.piece].filter(Boolean).join(' · ');
 
-let api = null, learners = [], papers = [], view = 'list', cur = null;
+let api = null, learners = [], papers = [], view = new URLSearchParams(location.search).has('import') ? 'import' : 'list', cur = null;
 
 // ---------- 登录（和 Augie 的老师页共用同一个登录状态） ----------
 function showLogin(msg) {
@@ -102,7 +105,7 @@ async function loadAll() {
   app.innerHTML = '<p class="faint">加载中…</p>';
   try {
     if (MOCK && !api) api = await createMockTeacherApi();
-    learners = await api.listLearners();
+    learners = (await api.listLearners()).filter(isYd);
     try { papers = await api.listPapers(); } catch (e) { if (authFail(e)) throw e; papers = null; }
     render();
   } catch (e) {
@@ -112,8 +115,8 @@ async function loadAll() {
   }
 }
 function nav() {
-  return `<div class="row" style="margin-bottom:12px"><h1 style="margin:0 10px 0 0">阅读词 · 老师页</h1>
-    <button data-v="list" class="${view !== 'bank' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库</button>
+  return `<div class="row" style="margin-bottom:12px"><h1 style="margin:0 10px 0 0">学生版 · 老师页</h1>
+    <button data-v="list" class="${view === 'list' || view === 'student' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库 · 选词布置</button><button data-v="import" class="${view === 'import' ? 'on' : ''}">导入词库</button><a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}" class="faint">家庭版 →</a>
     <span class="sp"></span>${MOCK ? '<span class="chip old">离线演示</span> <a href="#" id="rs" class="faint">清空演示数据</a>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${papers === null ? `<div class="card err">读不到词库${noSql('anki_test_bank')}。运行后刷新本页。</div>` : ''}`;
 }
@@ -122,13 +125,13 @@ function bindNav() {
   $('#lo')?.addEventListener('click', logout);
   $('#rs')?.addEventListener('click', (e) => { e.preventDefault(); api.reset(); location.reload(); });
 }
-function render() { if (view === 'bank') return showBank(); if (view === 'student' && cur) return openLearner(cur); showList(); }
+function render() { if (view === 'bank') return showBank(); if (view === 'import') return showImport(); if (view === 'student' && cur) return openLearner(cur); showList(); }
 
 // ---------- 学生列表 ----------
 function showList() {
   view = 'list';
   const rows = learners.map((l) => isYd(l)
-    ? `<tr><td><b>${esc(l.name)}</b>${l.status === 'paused' ? ' <span class="chip old">已停用</span>' : ''}</td><td><span class="chip">高中阅读词</span></td><td class="sub">${fmtTime(l.last_active)}</td>
+    ? `<tr><td><b>${esc(l.name)}</b>${l.status === 'paused' ? ' <span class="chip old">已停用</span>' : ''}</td><td><span class="chip">学生版阅读词</span></td><td class="sub">${fmtTime(l.last_active)}</td>
         <td style="text-align:right;white-space:nowrap"><button data-copy="${l.id}">复制链接</button> <button class="pri" data-open="${l.id}">进入</button>
           <button class="ghost" data-pause="${l.id}" title="停用后学生链接打不开，数据全部保留">${l.status === 'paused' ? '恢复启用' : '停用'}</button><span data-delslot="${l.id}"></span></td></tr>`
     : `<tr><td><b>${esc(l.name)}</b></td><td><span class="chip old">低年级多 Deck 版</span></td><td class="sub">${fmtTime(l.last_active)}</td>
@@ -136,9 +139,9 @@ function showList() {
           <button class="ghost" data-pause="${l.id}" title="停用后学生链接打不开，数据全部保留">${l.status === 'paused' ? '恢复启用' : '停用'}</button><span data-delslot="${l.id}"></span></td></tr>`).join('');
   app.innerHTML = `${nav()}
     <div class="card"><h2>学生</h2><div class="tbl-wrap"><table><thead><tr><th>学生</th><th>类型</th><th>最近打开</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="sub">还没有学生</td></tr>'}</tbody></table></div>
-      <p class="faint">学生链接 = 学生的“钥匙”，不要贴到公开的地方。低年级多 Deck 版（Augie）仍用原来的页面，这里不改它。<br>
+      <p class="faint">学生链接 = 学生的“钥匙”，不要贴到公开的地方。<br>
         停用 = 链接暂时打不开，数据全部保留；删除 = 永久删掉这个学生（要输入完整姓名），只有还没背过任何词的学生（比如建错了）才会出现“删除”按钮。删学生不会动词库。</p></div>
-    <div class="card"><h2>新增阅读词学生</h2>
+    <div class="card"><h2>新增学生</h2>
       <div class="row"><input type="text" id="nn" placeholder="学生名字，如 LXH-刘芯合" maxlength="40" style="width:240px"><button class="pri" id="add">新增并生成专属链接</button></div>
       <div class="msg" id="addmsg"></div>
       <p class="faint">权限固定：只背阅读词；能“不再背诵”和恢复；不能删除；看不到 Deck 和标签。新增后进入学生页面给他布置词库。</p></div>`;
@@ -149,7 +152,7 @@ function showList() {
   app.querySelectorAll('[data-pause]').forEach((b) => b.onclick = async () => {
     const l = learners.find((x) => x.id === b.dataset.pause), next = l.status === 'paused' ? 'active' : 'paused';
     if (next === 'paused' && !confirm(`停用「${l.name}」？\n停用后他的链接打不开；进度和答题记录都保留，随时可以“恢复启用”。`)) return;
-    try { await api.updateLearner(l.id, { status: next }); learners = await api.listLearners(); showList(); } catch (e) { alert('失败：' + e.message); }
+    try { await api.updateLearner(l.id, { status: next }); learners = (await api.listLearners()).filter(isYd); showList(); } catch (e) { alert('失败：' + e.message); }
   });
   // 删除：只给“没有任何答题记录”的学生（建错了的）；有记录的只能停用
   for (const l of learners) {
@@ -164,7 +167,7 @@ function showList() {
     const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', rnd = crypto.getRandomValues(new Uint8Array(16)), code = Array.from(rnd, (b) => A[b % 32]).join('');
     $('#add').disabled = true;
     try {
-      await api.addLearner(name, code); learners = await api.listLearners();
+      await api.addLearner(name, code); learners = (await api.listLearners()).filter(isYd);
       cur = learners.find((l) => l.code === code); view = 'student'; openLearner(cur, `已新增 ${name}。下一步：在下面给他布置词库，再把专属链接发给他。`);
     } catch (e) { $('#addmsg').innerHTML = `<span class="err">失败：${esc(e.message)}${noSql(e.message)}</span>`; $('#add').disabled = false; }
   };
@@ -176,7 +179,7 @@ async function deleteLearner(l) {
   const typed = prompt(`永久删除学生「${l.name}」？\n\n会删掉：这个学生、他的链接、他的进度和布置记录。删除后找不回来。\n不会删：词库（试卷、单词、读音）、其他学生的任何东西。\n\n确认请输入学生的完整姓名：${l.name}`);
   if (typed == null) return;
   if (typed.trim() !== l.name) return alert('输入的姓名和「' + l.name + '」不完全一样，没有删除。');
-  try { const n = await api.deleteLearner(l.id); if (!n) throw new Error('没有删掉（可能已经被删了）'); learners = await api.listLearners(); cur = null; showList(); }
+  try { const n = await api.deleteLearner(l.id); if (!n) throw new Error('没有删掉（可能已经被删了）'); learners = (await api.listLearners()).filter(isYd); cur = null; showList(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
 
@@ -193,7 +196,6 @@ async function openLearner(l, note) {
     app.innerHTML = `${nav()}<div class="card"><p class="err">${esc(e.message)}${noSql(e.message)}</p><button id="bk">返回</button></div>`; bindNav(); $('#bk').onclick = showList;
   }
 }
-const sel = { paper: null, secs: new Set() };
 function renderLearner(l, asg, rows, stats, bank, note) {
   const today = dayNumber(Date.now());
   const bmap = new Map(bank.map((b) => [b.card_key, b]));
@@ -208,19 +210,7 @@ function renderLearner(l, asg, rows, stats, bank, note) {
     if (c.suspended) { o.sus++; continue; }
     if (c.queue === 0) o.n++; else if (c.queue === 2) { o.r++; if (c.due <= today) o.due++; } else { o.l++; if (c.queue === 3 ? c.due <= today : c.due <= Date.now() / 1000 + 1200) o.due++; }
   }
-  // ① 布置
   const ps = papers || [];
-  const assignTree = ps.length ? ps.map((p) => {
-    const open = sel.paper === p.paper_id, allDone = p.sections.every((s) => asgSet.has(p.paper_id + '|' + s.id));
-    return `<div class="tree"><div class="p"><label><input type="checkbox" data-paper="${esc(p.paper_id)}" ${allDone ? 'checked disabled' : open ? 'checked' : ''}><span>${esc(p.name)}</span></label>
-        <span class="faint">${p.sections.reduce((a, s) => a + (s.count || 0), 0)} 词 · ${p.sections.length} 个板块${allDone ? ' · 已全部布置' : ''}</span></div>
-      ${p.sections.map((s) => { const u = p.paper_id + '|' + s.id, done = asgSet.has(u);
-        return `<div class="s ${done ? 'dis' : ''}"><label><input type="checkbox" data-sec="${esc(s.id)}" data-of="${esc(p.paper_id)}" ${done ? 'checked disabled' : open && sel.secs.has(s.id) ? 'checked' : ''} ${!open && !done ? 'disabled' : ''}>
-          <span>${esc(secTitle(s))}</span><span class="chip lv">${esc(s.level)}</span></label><span class="faint">${s.count || 0} 词${done ? ' · 已布置 ' + fmtDay(asgAt[u]) : ''}</span></div>`; }).join('')}</div>`;
-  }).join('') : '<p class="sub">词库里还没有试卷。先运行“上传阅读词词库-双击运行.cmd”。</p>';
-  const selP = ps.find((p) => p.paper_id === sel.paper);
-  const willSecs = selP ? selP.sections.filter((s) => sel.secs.has(s.id) && !asgSet.has(selP.paper_id + '|' + s.id)) : [];
-  const willN = willSecs.reduce((a, s) => a + (s.count || 0), 0);
   // ② 已布置 + 进度
   const asgRows = ps.flatMap((p) => p.sections.filter((s) => asgSet.has(p.paper_id + '|' + s.id)).map((s) => ({ p, s, u: p.paper_id + '|' + s.id })));
   const tot = { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0 };
@@ -240,18 +230,14 @@ function renderLearner(l, asg, rows, stats, bank, note) {
   const secOfB = (b) => { const p = ps.find((x) => x.paper_id === b.paper_id), s = p?.sections.find((x) => x.id === b.section_id); return s ? (s.piece || s.board) : ''; };
 
   app.innerHTML = `${nav()}
-    <div class="card"><div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1><span class="chip">高中阅读词</span><span class="sp"></span><span class="faint">最近打开：${fmtTime(l.last_active)}</span></div>
+    <div class="card"><div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1><span class="chip">学生版阅读词</span><span class="sp"></span><span class="faint">最近打开：${fmtTime(l.last_active)}</span></div>
       <div class="row" style="margin-top:10px"><span class="sub">专属链接</span><span class="linkbox sp">${esc(linkOf(l))}</span><button id="cp">复制</button></div>
       ${note ? `<p class="ok">${esc(note)}</p>` : ''}</div>
 
-    <div class="card"><h2>给 ${esc(l.name)} 布置词库 <span class="chip">阅读词</span></h2>
-      <div class="faint" style="margin:-4px 0 10px">① 勾试卷（板块会自动全选）→ ② 不想要的板块再取消 → ③ 点“布置”</div>
-      ${assignTree}
-      <div class="row"><span class="sub">${selP ? (willN ? `将布置 <b>${willN}</b> 个词（${willSecs.map((s) => esc(s.piece || s.board)).join('、')}）` : '没有选中新的板块') : '先勾选一套试卷'}</span><span class="sp"></span><button class="pri" id="assign" ${willN ? '' : 'disabled'}>布置</button></div>
-      <div class="msg" id="amsg"></div></div>
+    <div id="assignment-picker"></div>
 
     <div class="card"><h2>已布置 · 背诵进度</h2>
-      ${progRows ? `<div class="tbl-wrap"><table><thead><tr><th>试卷</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">不再背诵</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
+      ${progRows ? `<div class="tbl-wrap"><table><thead><tr><th>材料</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">不再背诵</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
         <tbody>${progRows}<tr><td><b>合计</b></td><td></td><td class="num"><b>${tot.total}</b></td><td class="num n-new">${tot.n}</td><td class="num n-learn">${tot.l}</td><td class="num n-rev">${tot.r}</td><td class="num n-sus">${tot.sus}</td><td class="num">${tot.due}</td><td></td><td></td><td></td></tr></tbody></table></div>
         <p class="faint">进度条：<span class="n-rev">绿 = 已进入复习</span> · <span class="n-learn">红 = 学习中</span> · <span class="n-sus">黄 = 不再背诵</span> · 空白 = 还没学。撤回 = 学生暂时看不到这个板块，进度都保留。</p>` : '<div class="empty">还没布置词库</div>'}
       <div class="msg" id="umsg"></div></div>
@@ -264,7 +250,7 @@ function renderLearner(l, asg, rows, stats, bank, note) {
           <label>复习上限 <input type="number" id="rpd" min="0" max="10000" value="${l.rev_per_day}" style="width:90px"> 个/天</label><button id="savelim">保存</button></div>
         <div class="msg" id="lmsg"></div>
         <h3>这个学生能做什么</h3>
-        <ul class="sub" style="margin:0;padding-left:20px"><li>✅ 背阅读词，自己选今天背哪几篇</li><li>✅ “不再背诵”某个词，也能恢复；最近 3 步操作都能撤销</li><li>❌ 删除词（没有删除按钮，数据库也不接受）</li><li>❌ 看到 Deck、标签（只看到试卷、篇章、难度）</li></ul></div>
+        <ul class="sub" style="margin:0;padding-left:20px"><li>✅ 背阅读词，自己选今天背哪几篇</li><li>✅ “不再背诵”某个词，也能恢复；最近 3 步操作都能撤销</li><li>❌ 删除词（没有删除按钮，数据库也不接受）</li><li>❌ 看到 Deck、标签（只看到材料、篇章、难度）</li></ul></div>
     </div>
 
     <div class="card"><h2>学生点过“不再背诵”的词 <span class="chip old">${susList.length}</span></h2>
@@ -273,21 +259,10 @@ function renderLearner(l, asg, rows, stats, bank, note) {
         </tbody></table></div>` : '<p class="sub">还没有。</p>'}
       <div class="msg" id="smsg"></div></div>`;
   bindNav();
-  $('#bk').onclick = () => { sel.paper = null; sel.secs = new Set(); cur = null; showList(); };
+  $('#bk').onclick = () => { cur = null; showList(); };
   $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(linkOf(l)); $('#cp').textContent = '已复制 ✓'; } catch (e) { $('#cp').textContent = '请手动复制'; } };
   const redraw = (n) => renderLearner(l, asg, rows, stats, bank, n);
-  app.querySelectorAll('[data-paper]').forEach((cb) => cb.onchange = () => {
-    const p = ps.find((x) => x.paper_id === cb.dataset.paper);
-    if (cb.checked) { sel.paper = p.paper_id; sel.secs = new Set(p.sections.map((s) => s.id)); } else { sel.paper = null; sel.secs = new Set(); }
-    redraw();
-  });
-  app.querySelectorAll('[data-sec]').forEach((cb) => cb.onchange = () => { cb.checked ? sel.secs.add(cb.dataset.sec) : sel.secs.delete(cb.dataset.sec); redraw(); });
-  $('#assign').onclick = async () => {
-    $('#assign').disabled = true; $('#amsg').textContent = '布置中…';
-    try { const n = await api.assign(l.id, selP.paper_id, willSecs.map((s) => s.id)); sel.paper = null; sel.secs = new Set(); const kept = willN - n;
-      await openLearner(l, `已布置：${selP.name} ${willSecs.map((s) => s.piece || s.board).join('、')}（新词 ${n} 个${kept > 0 ? `；另有 ${kept} 个以前布置过，接着原来的进度` : ''}）。学生刷新页面就能看到。`); }
-    catch (e) { $('#amsg').innerHTML = `<span class="err">失败：${esc(e.message)}${noSql(e.message)}</span>`; $('#assign').disabled = false; }
-  };
+  mountLibrary($('#assignment-picker'), { api, papers: ps, learner: l, onAssigned: (msg) => openLearner(l, msg) });
   app.querySelectorAll('[data-un]').forEach((b) => b.onclick = async () => {
     const [pid, sid] = b.dataset.un.split('|'), p = ps.find((x) => x.paper_id === pid), s = p.sections.find((x) => x.id === sid);
     if (!confirm(`撤回「${p.name} ${s.piece || s.board}」？\n学生会暂时看不到这些词；进度和答题记录都保留，以后再布置会接着原来的进度。`)) return;
@@ -307,17 +282,15 @@ function renderLearner(l, asg, rows, stats, bank, note) {
 }
 
 // ---------- 词库 ----------
-async function showBank() {
+function showBank() {
   view = 'bank';
-  let asg = []; try { asg = await api.listAssignments(); } catch (e) { /* 读不到就不显示布置给谁 */ }
-  const name = (id) => learners.find((l) => l.id === id)?.name || '?';
-  const ps = papers || [];
-  app.innerHTML = `${nav()}<div class="card"><h2>已导入的词库 <span class="chip">阅读词</span></h2>
-    ${ps.length ? ps.map((p) => `<div class="tree"><div class="p"><span>${esc(p.name)}</span><span class="sp"></span><span class="faint" style="font-weight:400">${p.sections.reduce((a, s) => a + (s.count || 0), 0)} 词 · ${esc(p.source?.pack || '')} · 更新于 ${fmtDay(p.updated_at)}</span></div>
-      ${p.sections.map((s) => { const who = asg.filter((a) => a.paper_id === p.paper_id && a.section_id === s.id).map((a) => name(a.learner_id)); return `<div class="s"><span>${esc(secTitle(s))}</span><span class="chip lv">${esc(s.level)}</span><span class="sp"></span><span class="faint">${s.count || 0} 词 · 已布置给 ${who.length ? esc(who.join('、')) : '—'}</span></div>`; }).join('')}</div>`).join('')
-      : '<p class="sub">词库里还没有试卷。</p>'}
-    <p class="faint">“阅读词”是唯一的词库，以后的试卷都并进来。导入新试卷：AI 在电脑上把词库包转换好，你双击上传脚本、自己输老师密码，然后在学生页面里“布置”。卡片内容存在云端数据库，不放公开的 GitHub。</p></div>`;
-  bindNav();
+  app.innerHTML = `${nav()}<div id="library-root"></div>`; bindNav();
+  mountLibrary($('#library-root'), { api, papers: papers || [], learners });
+}
+function showImport() {
+  view = 'import';
+  app.innerHTML = `${nav()}<div id="upload-root"></div>`; bindNav();
+  mountUpload($('#upload-root'), { api, papers: papers || [], onImported: async () => { papers = await api.listPapers(); } });
 }
 
 const saved = ssGet('anki_test_teacher_token');

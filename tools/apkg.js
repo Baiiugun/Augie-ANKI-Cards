@@ -110,8 +110,8 @@ function readModelsAndDecks(db) {
  * @param mediaDir directory (will be created) where media files are stored as <sha1-16>.<ext>
  * @returns { models, decks, notes:[{id, mid, fields:[], tags:[]}], cards:[{id,nid,did,ord,flag,sched}], revlog:[], crt, mediaMap: Map<name,file>, cleanup }
  */
-export async function readApkg(file, mediaDir) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apkg-'));
+export async function readApkg(file, mediaDir, tempRoot = os.tmpdir()) {
+  const tmp = fs.mkdtempSync(path.join(tempRoot, 'apkg-'));
   const cleanup = () => fs.rmSync(tmp, { recursive: true, force: true });
   try {
     await extractZip(file, tmp);

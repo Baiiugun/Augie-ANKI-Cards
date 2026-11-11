@@ -62,6 +62,7 @@
 
 <script type="module">
 import { createApi, createMockApi, stateOf } from './lib/api.js';
+import { createStudentApi } from './lib/yuedu-api.js';
 import { mountBrowser } from './lib/browser.js';
 import { mediaBase } from './lib/config.js';
 import { applyAllEdits, applyTagRemovals } from './lib/edits.js';
@@ -95,6 +96,15 @@ const BASE_CSS = `.card{font-family:-apple-system,"PingFang SC",arial,sans-serif
 // ---------- 加载 ----------
 async function boot() {
   try {
+    if (!MOCK) {
+      if (code.length !== 16) return showCodeInput();
+      try {
+        await createStudentApi(code).getState();
+        lsSet('yuedu_code', code);
+        if (lsGet('anki_test_code') === code) localStorage.removeItem('anki_test_code');
+        location.replace('阅读词.html#k=' + encodeURIComponent(code)); return;
+      } catch (e) { if (!/not yuedu learner/.test(e.message)) throw e; }
+    }
     const man = await (await fetch('data/manifest.json?v=' + Date.now())).json();
     S.manifest = man;
     await Promise.all(man.packages.map(async (p) => { S.content[p.slug] = await (await fetch(`data/${p.slug}.json?v=${man.generated}`)).json(); }));
@@ -137,9 +147,11 @@ function showError(e) {
   $('#rc')?.addEventListener('click', showCodeInput);
 }
 function showCodeInput() {
-  app.innerHTML = `<h1>请输入学习码</h1><p class="sub">爸爸发给你的 16 位学习码（或直接点爸爸发的链接）。</p>
-    <input class="code" id="ci" maxlength="24" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters"><p></p><button class="btn" id="cb">进入</button>`;
+  $('#banner').textContent = '⚠️ 测试版 · 词汇学习';
+  app.innerHTML = `<h1>请输入学习码</h1><p class="sub">输入老师或家长发给你的 16 位学习码，进入自己的学习页面。</p>
+    <input class="code" id="ci" maxlength="24" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters"><p></p><button class="btn" id="cb">进入</button><p class="sub"><a href="阅读词-老师登录版本.html">学生版 · 老师登录</a>　<a href="Augie-Anki测试-老师登录版本.html">家庭版 · 家长登录</a></p>`;
   $('#cb').onclick = () => { const c = normCode($('#ci').value); if (c.length !== 16) { alert('学习码是 16 位字母和数字'); return; } lsSet('anki_test_code', c); location.hash = ''; location.reload(); };
+  $('#ci').onkeydown = (e) => { if (e.key === 'Enter') $('#cb').click(); };
 }
 
 // ---------- 今天的计数（按 Deck 分别算，同 Anki 按牌组算上限） ----------
@@ -167,6 +179,7 @@ const qCounts = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.le
 
 // ---------- 首页：Deck 列表 ----------
 function showHome() {
+  $('#banner').textContent = '⚠️ 测试版 · 家庭学习';
   S.session = null; stopAudio();
   const packs = livePackages(), tot = queueFor(packs.map((p) => p.slug)), t = qCounts(tot);
   const row = (slug, name, sub, c, gear) => `<div class="deck" data-slug="${slug}">
@@ -179,12 +192,13 @@ function showHome() {
     const sus = (S.bySlug.get(p.slug) || []).filter((c) => c.suspended).length, lim = limitsFor(p.slug);
     html += row(p.slug, p.name, `${(S.bySlug.get(p.slug) || []).length} 张${sus ? ` · 暂停 ${sus}` : ''} · 每天新 ${lim.newPerDay} / 复习 ${lim.revPerDay}${lim.overridden ? '（今天已调整）' : ''}`, qCounts(queueFor([p.slug])), true);
   }
-  html += `<p><button class="btn ghost" id="mg">📚 管理卡片（选今天学哪些）</button></p>`;
+  html += `<p><button class="btn ghost" id="mg">📚 管理卡片（选今天学哪些）</button></p><p><button class="btn ghost" id="switch-code">更换学习码</button></p>`;
   if (MOCK) html += `<p class="sub">离线演示模式：进度只存在这台设备上。<a href="#" id="rs">清空演示进度</a></p>`;
   app.innerHTML = html;
   app.querySelectorAll('.deck').forEach((d) => d.onclick = () => startStudy(d.dataset.slug));
   app.querySelectorAll('[data-gear]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); showSettings(b.dataset.gear); });
   $('#mg').onclick = () => showBrowse('');
+  $('#switch-code').onclick = showCodeInput;
   $('#rs')?.addEventListener('click', (e) => { e.preventDefault(); S.api.reset(); location.reload(); });
 }
 
