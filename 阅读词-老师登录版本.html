@@ -55,6 +55,17 @@
   .err{color:var(--learn)}.ok{color:var(--rev)}
   .empty{text-align:center;padding:30px 16px;color:var(--sub)}
   .msg{min-height:1.4em;margin-top:8px}
+  .assignment-bar{position:sticky;top:8px;z-index:5;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:12px;margin:0 0 16px}
+  .recipient-picker{border:0;margin:0 0 10px;padding:0;min-width:0}
+  .recipient-picker legend{font-weight:700;margin-bottom:6px}
+  .recipient-options{max-height:100px;overflow-y:auto}
+  .recipient-options label{padding:5px 9px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+  .recipient-options label:has(input:checked){border-color:var(--acc);background:var(--acc-weak)}
+  .recipient-summary{font-weight:700;color:var(--acc);max-height:64px;overflow-y:auto;overflow-wrap:anywhere}
+  .recipient-summary.err{color:var(--learn)}
+  .assignment-bar .msg{max-height:76px;overflow-y:auto}
+  .assigned-actions{padding:10px 0;border-bottom:1px solid var(--line)}
+  @media(max-width:600px){.assignment-bar{top:0;padding:10px}.assignment-bar .row{gap:7px}.assignment-bar #lib-assign{width:100%}.tree .s{flex-wrap:wrap;padding-left:16px}}
 </style>
 </head>
 <body>
@@ -218,7 +229,12 @@ function renderLearner(l, asg, rows, stats, bank, note) {
     const o = prog[u] || { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0 }; for (const k in tot) tot[k] += o[k] || 0; const t = o.total || 1;
     return `<tr><td>${esc(p.name)}</td><td>${esc(secTitle(s))} <span class="chip lv">${esc(s.level)}</span></td><td class="num">${o.total}</td><td class="num n-new">${o.n}</td><td class="num n-learn">${o.l}</td><td class="num n-rev">${o.r}</td><td class="num n-sus">${o.sus}</td><td class="num">${o.due}</td>
       <td style="width:16%"><div class="bar"><i style="width:${o.r / t * 100}%;background:var(--rev)"></i><i style="width:${o.l / t * 100}%;background:var(--learn)"></i><i style="width:${o.sus / t * 100}%;background:var(--sus)"></i></div></td>
-      <td class="faint">${fmtDay(asgAt[u])}</td><td><button data-un="${esc(u)}" title="学生看不到这个板块了；进度保留，再布置会接着原来的进度">撤回</button></td></tr>`;
+      <td class="faint">${fmtDay(asgAt[u])}</td><td><button data-un="${esc(u)}" title="仅撤销该学生本篇的布置；总词库、进度和答题记录保留">撤销本篇</button></td></tr>`;
+  }).join('');
+  const paperActions = ps.filter((p) => asgRows.some((a) => a.p.paper_id === p.paper_id)).map((p) => {
+    const assignedSections = asgRows.filter((a) => a.p.paper_id === p.paper_id);
+    const n = assignedSections.reduce((sum, a) => sum + (prog[a.u]?.total || 0), 0);
+    return `<div class="row assigned-actions"><b>${esc(p.name)}</b><span class="faint">已布置 ${assignedSections.length} 篇 · ${n} 词</span><span class="sp"></span><button data-un-paper="${esc(p.paper_id)}">撤销整套布置</button></div>`;
   }).join('');
   // ③ 每天答题
   const byDay = Object.fromEntries((stats || []).map((s) => [s.day_no, s]));
@@ -234,13 +250,14 @@ function renderLearner(l, asg, rows, stats, bank, note) {
       <div class="row" style="margin-top:10px"><span class="sub">专属链接</span><span class="linkbox sp">${esc(linkOf(l))}</span><button id="cp">复制</button></div>
       ${note ? `<p class="ok">${esc(note)}</p>` : ''}</div>
 
-    <div id="assignment-picker"></div>
-
     <div class="card"><h2>已布置 · 背诵进度</h2>
-      ${progRows ? `<div class="tbl-wrap"><table><thead><tr><th>材料</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">不再背诵</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
+      <p class="sub">撤销布置后，${esc(l.name)} 刷新页面就看不到对应的词。总词库、学习进度和答题记录保留，以后可以重新布置。</p>
+      ${progRows ? `${paperActions}<div class="tbl-wrap"><table><thead><tr><th>材料</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">不再背诵</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
         <tbody>${progRows}<tr><td><b>合计</b></td><td></td><td class="num"><b>${tot.total}</b></td><td class="num n-new">${tot.n}</td><td class="num n-learn">${tot.l}</td><td class="num n-rev">${tot.r}</td><td class="num n-sus">${tot.sus}</td><td class="num">${tot.due}</td><td></td><td></td><td></td></tr></tbody></table></div>
-        <p class="faint">进度条：<span class="n-rev">绿 = 已进入复习</span> · <span class="n-learn">红 = 学习中</span> · <span class="n-sus">黄 = 不再背诵</span> · 空白 = 还没学。撤回 = 学生暂时看不到这个板块，进度都保留。</p>` : '<div class="empty">还没布置词库</div>'}
+        <p class="faint">进度条：<span class="n-rev">绿 = 已进入复习</span> · <span class="n-learn">红 = 学习中</span> · <span class="n-sus">黄 = 不再背诵</span> · 空白 = 还没学。</p>` : '<div class="empty">还没布置词库，请在下方选词。</div>'}
       <div class="msg" id="umsg"></div></div>
+
+    <div id="assignment-picker"></div>
 
     <div class="grid2">
       <div class="card"><h2>每天答了多少次（最近 14 天，凌晨 4 点换天）</h2>
@@ -263,11 +280,24 @@ function renderLearner(l, asg, rows, stats, bank, note) {
   $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(linkOf(l)); $('#cp').textContent = '已复制 ✓'; } catch (e) { $('#cp').textContent = '请手动复制'; } };
   const redraw = (n) => renderLearner(l, asg, rows, stats, bank, n);
   mountLibrary($('#assignment-picker'), { api, papers: ps, learner: l, onAssigned: (msg) => openLearner(l, msg) });
-  app.querySelectorAll('[data-un]').forEach((b) => b.onclick = async () => {
-    const [pid, sid] = b.dataset.un.split('|'), p = ps.find((x) => x.paper_id === pid), s = p.sections.find((x) => x.id === sid);
-    if (!confirm(`撤回「${p.name} ${s.piece || s.board}」？\n学生会暂时看不到这些词；进度和答题记录都保留，以后再布置会接着原来的进度。`)) return;
-    try { await api.unassign(l.id, pid, [sid]); await openLearner(l, `已撤回：${p.name} ${s.piece || s.board}`); }
+  let unassigning = false;
+  async function revoke(p, secs, label) {
+    if (unassigning) return;
+    const n = secs.reduce((sum, sid) => sum + (prog[p.paper_id + '|' + sid]?.total || 0), 0);
+    if (!confirm(`撤销给「${l.name}」的布置？\n\n材料：${p.name}\n范围：${label}（${secs.length} 篇，共 ${n} 词）\n\n确认后，该学生刷新页面就看不到这些词。\n总词库和读音不删除，其他学生不受影响。\n该学生的学习进度和答题记录保留，以后重新布置会继续原进度。`)) return;
+    unassigning = true;
+    app.querySelectorAll('[data-un],[data-un-paper]').forEach((b) => { b.disabled = true; });
+    try { await api.unassign(l.id, p.paper_id, secs); await openLearner(l, `已撤销给 ${l.name} 的布置：${p.name} · ${label}。词库与学习记录已保留。`); }
     catch (e) { $('#umsg').innerHTML = `<span class="err">失败：${esc(e.message)}</span>`; }
+    finally { unassigning = false; app.querySelectorAll('[data-un],[data-un-paper]').forEach((b) => { b.disabled = false; }); }
+  }
+  app.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => {
+    const [pid, sid] = b.dataset.un.split('|'), p = ps.find((x) => x.paper_id === pid), s = p.sections.find((x) => x.id === sid);
+    return revoke(p, [sid], secTitle(s));
+  });
+  app.querySelectorAll('[data-un-paper]').forEach((b) => b.onclick = () => {
+    const p = ps.find((x) => x.paper_id === b.dataset.unPaper);
+    return revoke(p, asgRows.filter((a) => a.p.paper_id === p.paper_id).map((a) => a.s.id), '这套材料中已布置的全部篇章');
   });
   $('#savelim').onclick = async () => {
     const n = Math.max(0, Math.min(1000, Math.round(+$('#npd').value || 0))), r = Math.max(0, Math.min(10000, Math.round(+$('#rpd').value || 0)));
