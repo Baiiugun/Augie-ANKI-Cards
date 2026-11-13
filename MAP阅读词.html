@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAP阅读词</title><link rel="stylesheet" href="map/map.css">
+<body data-role="student"><main><header><span class="badge">测试版</span><h1>MAP 阅读词</h1><p id="student-name">选择老师布置的练习，继续背词。</p></header>
+<p id="notice" role="status"></p><section id="login"><form id="student-form"><label>学习码<input id="code" maxlength="16" autocomplete="off" required></label><button>进入学习</button></form></section>
+<div id="study" hidden><section><h2>今天学习的练习</h2><div id="source-picks"></div><button id="start-study">开始／继续</button><button id="refresh-study">刷新布置</button></section>
+<section id="card-panel"><p id="card-source"></p><h2 id="word"></h2><p id="word-meta"></p><button id="audio">播放读音</button>
+<button id="show-answer">显示释义</button><div id="answer" hidden><h2 id="meaning"></h2><p id="example"></p><p id="translation"></p>
+<p class="muted">原文语境来自题目；选项可能包含故意设置的语法错误。</p>
+<div id="grades" class="row"></div></div>
+<div class="row"><button id="suspend">不再背诵</button><button id="undo">撤销上一步</button></div>
+</section><section><h2>我的词</h2><div id="my-words"></div></section></div></main>
+<script type="module" src="map/map-cloud.js"></script></body></html>

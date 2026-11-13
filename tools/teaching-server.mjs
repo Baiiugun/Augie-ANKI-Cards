@@ -11,9 +11,9 @@ const work = path.resolve(repo, '../import-work/teaching-upload');
 const port = Number(process.env.TEACHING_PORT || 8767), origin = `http://127.0.0.1:${port}`;
 const sessions = new Map();
 const inside = (root, file) => file.startsWith(root + path.sep);
-function removeSession(dir) { if (!inside(work, path.resolve(dir))) throw new Error('Unsafe cleanup path'); fs.rmSync(dir, { recursive: true, force: true }); }
+function removeSession(dir) { if (!inside(work, path.resolve(dir))) throw new Error('Unsafe cleanup path'); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 const send = (res, code, value) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.wasm': 'application/wasm', '.css': 'text/css', '.json': 'application/json', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
 const server = http.createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}` || (req.headers.origin && req.headers.origin !== origin)) return send(res, 403, { error: '请从本机导入窗口操作' });
@@ -42,7 +42,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/_import/media/')) {
       const [, , , id, name] = pathname.split('/');
       const dir = sessions.get(id);
-      if (!dir || !/^[a-f0-9]{20}\.[a-z0-9]{1,6}$/.test(name || '')) return send(res, 404, { error: '预览已失效，请重新校验' });
+      if (!dir || !/^(?:[a-f0-9]{20}|[a-f0-9]{64})\.[a-z0-9]{1,6}$/.test(name || '')) return send(res, 404, { error: '预览已失效，请重新校验' });
       const file = path.join(dir, 'media', name);
       if (!fs.existsSync(file)) return send(res, 404, { error: '媒体不存在' });
       res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' }); fs.createReadStream(file).pipe(res); return;
@@ -50,7 +50,7 @@ const server = http.createServer(async (req, res) => {
     if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: '不支持的操作' });
     const file = path.resolve(repo, '.' + (pathname === '/' ? '/阅读词-老师登录版本.html' : pathname));
     const relative = path.relative(repo, file).split(path.sep);
-    if (!inside(repo, file) || relative.some((x) => x.startsWith('.')) || ['tools', 'node_modules'].includes(relative[0]) || !['.html', '.js', '.css', '.json'].includes(path.extname(file)) || !fs.existsSync(file)) return send(res, 404, { error: '找不到页面' });
+    if (!inside(repo, file) || relative.some((x) => x.startsWith('.')) || ['tools', 'node_modules'].includes(relative[0]) || !['.html', '.js', '.mjs', '.wasm', '.css', '.json'].includes(path.extname(file)) || !fs.existsSync(file)) return send(res, 404, { error: '找不到页面' });
     res.writeHead(200, { 'Content-Type': types[path.extname(file)], 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);

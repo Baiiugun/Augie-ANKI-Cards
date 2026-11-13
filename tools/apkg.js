@@ -52,7 +52,8 @@ function extractZip(file, dir) {
           if (e) return reject(e);
           const out = fs.createWriteStream(path.join(dir, entry.fileName));
           stream.pipe(out);
-          out.on('finish', () => zip.readEntry());
+          // Wait for the Windows file handle to close before exposing extraction as complete.
+          out.on('close', () => zip.readEntry());
           out.on('error', reject);
         });
       });
@@ -112,7 +113,11 @@ function readModelsAndDecks(db) {
  */
 export async function readApkg(file, mediaDir, tempRoot = os.tmpdir()) {
   const tmp = fs.mkdtempSync(path.join(tempRoot, 'apkg-'));
-  const cleanup = () => fs.rmSync(tmp, { recursive: true, force: true });
+  const cleanup = () => {
+    const target = path.resolve(tmp), root = path.resolve(tempRoot);
+    if (!target.startsWith(root + path.sep) || !path.basename(target).startsWith('apkg-')) throw new Error('Unsafe APKG temporary cleanup path');
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  };
   try {
     await extractZip(file, tmp);
     // media index
@@ -163,7 +168,13 @@ export async function readApkg(file, mediaDir, tempRoot = os.tmpdir()) {
         factor: Number(r.factor), time: Number(r.time), type: Number(r.type),
       })) : [];
       const crt = hasTable(db, 'col') ? Number(allBig(db, 'SELECT crt FROM col')[0].crt) : null;
-      return { models, decks, notes, cards, revlog, crt, mediaMap, cleanup };
+      const manifestFile = path.join(tmp, 'map_manifest.json');
+      let mapManifest = null;
+      if (fs.existsSync(manifestFile)) {
+        if (fs.statSync(manifestFile).size > 128 * 1024 * 1024) throw new Error('MAP 来源清单过大');
+        mapManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      }
+      return { models, decks, notes, cards, revlog, crt, mediaMap, mapManifest, cleanup };
     } finally { db.close(); }
   } catch (e) { cleanup(); throw e; }
 }

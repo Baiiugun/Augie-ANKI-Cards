@@ -1,0 +1,14 @@
+:root{font:16px/1.65 system-ui,"Microsoft YaHei",sans-serif;color:#23384e;background:#f3f6fb}
+body{margin:0}main{max-width:1080px;margin:auto;padding:24px}header{padding:12px 0 20px}
+h1{font-size:32px;margin:6px 0}h2{font-size:21px;margin:6px 0 16px}p{margin:8px 0}
+section{background:white;padding:24px;margin:16px 0;border-radius:12px;border:1px solid #dce5ef}
+label{display:inline-flex;flex-direction:column;gap:5px;margin:6px 12px 6px 0}
+input,select,button{font:inherit;border:1px solid #bccbdc;border-radius:6px;padding:8px 12px;box-sizing:border-box}
+button{background:#245d9a;color:white;cursor:pointer;margin:5px 4px 5px 0}button:disabled{opacity:.5;cursor:wait}
+input,select{background:white;color:#23384e;max-width:100%}input[type=checkbox]{width:19px;height:19px}
+.row{display:flex;align-items:end;flex-wrap:wrap;gap:8px}.sticky{position:sticky;top:0;background:white;padding:10px 0}
+.table{overflow:auto;max-height:520px}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:10px;border-bottom:1px solid #e4eaf2}
+.badge{background:#e0edfa;padding:3px 10px;border-radius:6px;color:#225a91}.muted{font-size:13px;color:#6b7d91}
+#notice{white-space:pre-wrap;color:#225b91;min-height:24px}#word{font-size:36px}#card-panel{min-height:220px}
+.source-choice{display:flex;align-items:center;gap:10px;flex-direction:row;padding:5px}
+@media(max-width:640px){main{padding:12px}section{padding:18px}.row label{width:100%}h1{font-size:28px}}

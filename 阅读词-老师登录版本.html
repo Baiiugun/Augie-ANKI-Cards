@@ -127,7 +127,7 @@ async function loadAll() {
 }
 function nav() {
   return `<div class="row" style="margin-bottom:12px"><h1 style="margin:0 10px 0 0">学生版 · 老师页</h1>
-    <button data-v="list" class="${view === 'list' || view === 'student' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库 · 选词布置</button><button data-v="import" class="${view === 'import' ? 'on' : ''}">导入词库</button><a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}" class="faint">家庭版 →</a>
+    <button data-v="list" class="${view === 'list' || view === 'student' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库 · 选词布置</button><button data-v="import" class="${view === 'import' ? 'on' : ''}">导入词库</button><a href="MAP词库-老师登录版本.html" class="faint">MAP 词库与布置 →</a> <a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}" class="faint">家庭版 →</a>
     <span class="sp"></span>${MOCK ? '<span class="chip old">离线演示</span> <a href="#" id="rs" class="faint">清空演示数据</a>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${papers === null ? `<div class="card err">读不到词库${noSql('anki_test_bank')}。运行后刷新本页。</div>` : ''}`;
 }

@@ -115,11 +115,12 @@ const S = { api: null, learner: null, skew: 0, today: 0, papers: [], cards: new 
 const UNDO_MAX = 3;
 const now = () => Date.now() + S.skew;
 const unitOf = (c) => c.paper + '|' + c.sec;
+const unitsOf = (c) => (c.d.source_sections || [c.sec]).map((s) => c.paper + '|' + s);
 const paperOf = (id) => S.papers.find((p) => p.paper_id === id);
 const secOf = (pid, sid) => (paperOf(pid)?.sections || []).find((s) => s.id === sid);
 const units = () => S.papers.flatMap((p) => p.sections.map((s) => p.paper_id + '|' + s.id));
 const secTitle = (s) => s ? (s.label || [s.board, s.piece].filter(Boolean).join(' · ')) : '';
-const srcLine = (c) => { const p = paperOf(c.paper), s = secOf(c.paper, c.sec); return `${p ? p.name : ''} ${secTitle(s)} ${s ? s.level : ''}`.trim(); };
+const srcLine = (c) => { const p = paperOf(c.paper); return [p?.name || '', ...(c.d.source_sections || [c.sec]).map((id) => secTitle(secOf(c.paper, id)))].filter(Boolean).join(' · '); };
 const kind = (c) => (c.suspended ? 'sus' : c.type === 0 ? 'new' : c.type === 2 && c.queue === 2 ? 'rev' : 'learn');
 
 async function boot() {
@@ -157,7 +158,7 @@ function todayCounts() { return { newDone: new Set(S.log.filter((l) => l.prev_ty
 const limits = () => ({ newPerDay: S.learner.new_per_day, revPerDay: S.learner.rev_per_day });
 function queueFor(sel) {
   const set = sel ? new Set(sel) : null;
-  const list = [...S.cards.values()].filter((c) => !set || set.has(unitOf(c)));
+  const list = [...S.cards.values()].filter((c) => !set || unitsOf(c).some((u) => set.has(u)));
   return buildQueue(list, now(), todayCounts(), limits());
 }
 const qn = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.length + q.learnAhead.length, r: q.reviews.length });
@@ -252,7 +253,7 @@ function renderStudy(q) {
       <span class="sp"></span>${c ? '<button class="warn" id="sus" title="这个词以后不再出现；可以撤销，也可以在「我的词」里恢复">🚫 不再背诵</button>' : ''}
       <button id="undo" ${S.undo.length ? '' : 'disabled'} title="快捷键 Z">↶ 撤销${S.undo.length ? `（还能撤 ${S.undo.length} 步）` : ''}</button></div>${undoBar()}`;
   if (!c) {
-    const nxt = [...S.cards.values()].filter((x) => !x.suspended && x.queue === 1 && ss.sel.includes(unitOf(x))).sort((a, b) => a.due - b.due)[0];
+    const nxt = [...S.cards.values()].filter((x) => !x.suspended && x.queue === 1 && unitsOf(x).some((u) => ss.sel.includes(u))).sort((a, b) => a.due - b.due)[0];
     const wait = nxt ? Math.max(Math.ceil((nxt.due - now() / 1000) / 60), 1) : 0;
     app.innerHTML = `<div class="wrap">${top}<div class="card empty"><div class="big">🎉</div><h2>这几篇今天背完了</h2>
       <div class="sub">${wait ? `还有学习中的词约 ${wait} 分钟后再出现。` : '真棒！明天再来。'}</div>
@@ -328,7 +329,7 @@ function renderWords() {
   const f = S.wf, q = f.q.trim().toLowerCase(), all = units();
   if (f.unit !== 'all' && !all.includes(f.unit)) f.unit = 'all';
   let list = [...S.cards.values()].sort((a, b) => (a.paper === b.paper ? a.ord - b.ord : a.paper < b.paper ? -1 : 1));
-  if (f.unit !== 'all') list = list.filter((c) => unitOf(c) === f.unit);
+  if (f.unit !== 'all') list = list.filter((c) => unitsOf(c).includes(f.unit));
   if (f.st !== 'all') list = list.filter((c) => kind(c) === f.st);
   if (q) list = list.filter((c) => c.d.w.toLowerCase().includes(q) || (c.d.mean || '').includes(q));
   const stName = { new: '新词', learn: '学习中', rev: '复习中', sus: '不再背诵' }, td = S.today;

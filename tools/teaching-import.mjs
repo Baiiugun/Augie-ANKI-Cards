@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { readApkg } from './apkg.js';
+import { prepareMapImport } from './map-import.mjs';
 import { COURSES, SOURCE_TYPES, parseFilename, checkTags, tiersFromTags } from '../lib/library-rules.js';
 const hash = (s) => crypto.createHash('sha1').update(s).digest('hex');
 const text = (s) => String(s || '').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&(#x[0-9a-f]+|#\d+|nbsp|amp|lt|gt|quot|apos|ndash|mdash|lsquo|rsquo);/gi, (raw, entity) => {
@@ -65,11 +66,14 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
   const meta = { ...parseFilename(filename), ...options };
   // File identity always comes from the actual filename, never deck names or form overrides.
   Object.assign(meta, parseFilename(filename));
-  if (!meta.courses?.length || meta.courses.some((c) => !COURSES.includes(c))) throw new Error('请选择有效的适用课程');
-  if (!SOURCE_TYPES.includes(meta.sourceType)) throw new Error('请选择来源类型');
-  if (meta.use !== '阅读词') throw new Error('本次先接入阅读词；写作词、听力词的训练方式尚未开通，请保留正确用途，待对应功能接入后再导入');
   const r = await readApkg(file, workDir + '/media', workDir);
   try {
+    if (r.mapManifest || r.notes.some((n) => n.tags.includes('MAP协议::v1') && n.tags.some((t) => t.startsWith('MAP科目::')))) {
+      return await prepareMapImport(r, filename, file, workDir + '/media', readTeachingNote);
+    }
+    if (!meta.courses?.length || meta.courses.some((c) => !COURSES.includes(c))) throw new Error('请选择有效的适用课程');
+    if (!SOURCE_TYPES.includes(meta.sourceType)) throw new Error('请选择来源类型');
+    if (meta.use !== '阅读词') throw new Error('本次先接入阅读词；写作词、听力词的训练方式尚未开通，请保留正确用途，待对应功能接入后再导入');
     if (!r.cards.length || !r.notes.length) throw new Error('包内没有卡片');
     if (r.revlog.length || r.cards.some((c) => c.sched.reps || c.sched.type || c.sched.queue > 0)) throw new Error('请导出不含学习进度的新词库包，不能把个人答题记录导入教学词库');
     const paperId = 'teach:' + hash(meta.material.normalize('NFKC').toLowerCase().replace(/[\s_-]+/g, '') + '|' + (meta.edition || '') + '|' + meta.use).slice(0, 24);

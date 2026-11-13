@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAP词库－老师登录版本</title><link rel="stylesheet" href="map/map.css">
+<body data-role="teacher"><main><header><span class="badge">测试版</span><h1>MAP 词库</h1><p>上传 Quiz 词表，按原始 PDF 页码选择练习和词条。</p><p><a href="阅读词-老师登录版本.html">学生管理与其他词库</a> · 学生继续使用原有阅读词学习链接。</p></header>
+<p id="notice" role="status"></p><section id="login"><h2>老师登录</h2>
+<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label>
+<label>密码<input id="password" type="password" autocomplete="current-password" required></label>
+<button>登录</button></form><p>使用现有云端系统的老师账号，登录信息直接提交原云端服务。</p></section>
+<div id="workspace" hidden><section><h2>导入 MAP APKG</h2><p id="local-hint"></p>
+<input id="package" type="file" accept=".apkg"><button id="upload" disabled>核对后上传</button>
+<div id="preview"></div></section>
+<section><h2>选择与布置</h2><div class="row"><label>接收学生<select id="learner"></select></label>
+<label>材料<select id="paper"></select></label><button id="reload">刷新词库</button></div>
+<div class="row"><label>材料年级<select id="grade"></select></label><label>原书板块<select id="domain"></select></label>
+<label>原书层级<select id="difficulty"></select></label><label>练习<select id="section"></select></label></div>
+<div class="row"><label>词库档位（可多选）<select id="tier" multiple size="4"><option value="">不限</option><option>A2</option><option>B1+</option><option value="__unmarked__">未标档位</option></select></label>
+<label>单词 CEFR（可多选）<select id="cefr" multiple size="4"><option value="">不限</option><option>A1</option><option>A2</option><option>B1</option><option>B2</option><option>C1</option><option>C2</option><option value="__unmarked__">未标注</option></select></label>
+<label>词条搜索<input id="query" placeholder="词形或释义"></label></div>
+<p>改变筛选会清空当前选词。词库档位和逐词 CEFR 独立，未标注不推算。</p>
+<div class="row sticky"><button id="select-all">选中匹配词</button><button id="select-none">清空</button>
+<strong id="selection-count">已选 0 词</strong><button id="assign">确认追加布置</button></div>
+<div class="table"><table><thead><tr><th>选择</th><th>词条</th><th>释义</th><th>CEFR</th><th>来源</th></tr></thead><tbody id="words"></tbody></table></div>
+</section><section><h2>已布置的 MAP 练习</h2><p>撤回一个练习时，共享词仍随其他有效练习保留；学习进度保留。</p><div id="assignments"></div></section>
+<button id="logout">退出登录</button></div></main><script type="module" src="map/map-cloud.js"></script></body></html>
