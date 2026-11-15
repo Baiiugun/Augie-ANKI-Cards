@@ -81,6 +81,17 @@
   .word-filters{margin:12px 0}
   .word-filters summary{cursor:pointer;color:var(--sub)}
   /* /LIBRARY-COLLAPSE-V1 */
+  /* LIBRARY-QUICK-SELECTION-V1 */
+  .library-heading{display:flex;align-items:center;gap:10px;padding-right:14px}
+  .library-heading .library-title{flex:1;width:auto;min-width:160px;padding-left:4px}
+  .quick-select{display:flex;gap:8px;align-items:center;white-space:nowrap;cursor:pointer}
+  .library-heading>.quick-select{padding-left:16px}
+  .tree .quick-select{flex:1;white-space:normal}
+  .quick-tier{min-width:58px;white-space:nowrap}
+  .quick-tier[aria-pressed=true]{color:var(--acc);border-color:var(--acc);background:var(--acc-weak);font-weight:700}
+  .folder-heading{background:var(--bg);font-weight:600}
+  .folder-parts{margin-left:20px;border-left:2px solid var(--line)}
+  /* /LIBRARY-QUICK-SELECTION-V1 */
 </style>
 </head>
 <body>
@@ -91,7 +102,7 @@
 import { dayNumber } from './lib/anki-sched.js';
 import { login } from './lib/teacher-api.js';
 import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js';
-import { mountLibrary } from './lib/teaching-library.js?v=20261115-collapse1';
+import { mountLibrary } from './lib/teaching-library.js?v=20261115-quick-selection1';
 import { mountUpload } from './lib/teaching-upload.js';
 
 const $ = (s) => document.querySelector(s);
