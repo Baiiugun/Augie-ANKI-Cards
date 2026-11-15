@@ -101,9 +101,9 @@
 <script type="module">
 import { dayNumber } from './lib/anki-sched.js';
 import { login } from './lib/teacher-api.js';
-import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js';
-import { mountLibrary } from './lib/teaching-library.js?v=20261115-quick-selection1';
-import { mountUpload } from './lib/teaching-upload.js';
+import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js?v=20261115-unified-library1';
+import { mountLibrary } from './lib/teaching-library.js?v=20261115-unified-library1';
+import { mountUpload } from './lib/teaching-upload.js?v=20261115-unified-library1';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -153,7 +153,7 @@ async function loadAll() {
 }
 function nav() {
   return `<div class="row" style="margin-bottom:12px"><h1 style="margin:0 10px 0 0">学生版 · 老师页</h1>
-    <button data-v="list" class="${view === 'list' || view === 'student' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库 · 选词布置</button><button data-v="import" class="${view === 'import' ? 'on' : ''}">导入词库</button><a href="MAP词库-老师登录版本.html" class="faint">MAP 词库与布置 →</a> <a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}" class="faint">家庭版 →</a>
+    <button data-v="list" class="${view === 'list' || view === 'student' ? 'on' : ''}">学生</button><button data-v="bank" class="${view === 'bank' ? 'on' : ''}">词库 · 选词布置</button><button data-v="import" class="${view === 'import' ? 'on' : ''}">导入词库</button><a href="Augie-Anki测试-老师登录版本.html${MOCK_Q}" class="faint">家庭版 →</a>
     <span class="sp"></span>${MOCK ? '<span class="chip old">离线演示</span> <a href="#" id="rs" class="faint">清空演示数据</a>' : '<button class="ghost" id="lo">退出登录</button>'}</div>
     ${papers === null ? `<div class="card err">读不到词库${noSql('anki_test_bank')}。运行后刷新本页。</div>` : ''}`;
 }
@@ -242,10 +242,12 @@ function renderLearner(l, asg, rows, stats, bank, note) {
   const prog = {};
   for (const c of rows) {
     const b = bmap.get(c.card_key); if (!b) continue;
-    const u = b.paper_id + '|' + b.section_id, o = (prog[u] ||= { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0, seen: 0 });
+    const scopes = b.data?.map_schema === 'echoo.map.vocab.v1' ? asg.filter((a) => a.paper_id === b.paper_id && a.card_keys?.includes(c.card_key)).map((a) => a.paper_id + '|' + a.section_id) : [b.paper_id + '|' + b.section_id];
+    for (const u of scopes) { const o = (prog[u] ||= { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0, seen: 0 });
     o.total++; if (c.reps > 0) o.seen++;
     if (c.suspended) { o.sus++; continue; }
     if (c.queue === 0) o.n++; else if (c.queue === 2) { o.r++; if (c.due <= today) o.due++; } else { o.l++; if (c.queue === 3 ? c.due <= today : c.due <= Date.now() / 1000 + 1200) o.due++; }
+  }
   }
   const ps = papers || [];
   // ② 已布置 + 进度
