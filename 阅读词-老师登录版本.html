@@ -66,6 +66,21 @@
   .assignment-bar .msg{max-height:76px;overflow-y:auto}
   .assigned-actions{padding:10px 0;border-bottom:1px solid var(--line)}
   @media(max-width:600px){.assignment-bar{top:0;padding:10px}.assignment-bar .row{gap:7px}.assignment-bar #lib-assign{width:100%}.tree .s{flex-wrap:wrap;padding-left:16px}}
+  /* LIBRARY-COLLAPSE-V1 */
+  .library-content[hidden]{display:none!important}
+  .library-results{margin:12px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;padding:0}
+  .library-result+.library-result{border-top:1px solid var(--line)}
+  .library-result{padding:0}
+  .library-title{display:block;width:100%;border:0;border-radius:0;text-align:left;padding:13px 16px;background:var(--card);font-weight:600;overflow-wrap:anywhere}
+  .library-title::before{content:'▸';display:inline-block;width:1.3em;color:var(--acc)}
+  .library-title[aria-expanded=true]::before{content:'▾'}
+  .library-title[aria-expanded=true]{background:var(--acc-weak)}
+  .library-title:focus-visible{outline:2px solid var(--acc);outline-offset:-3px}
+  .library-content{padding:0 12px 12px}
+  .library-pagination{justify-content:center;padding:12px 0}
+  .word-filters{margin:12px 0}
+  .word-filters summary{cursor:pointer;color:var(--sub)}
+  /* /LIBRARY-COLLAPSE-V1 */
 </style>
 </head>
 <body>
@@ -76,7 +91,7 @@
 import { dayNumber } from './lib/anki-sched.js';
 import { login } from './lib/teacher-api.js';
 import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js';
-import { mountLibrary } from './lib/teaching-library.js';
+import { mountLibrary } from './lib/teaching-library.js?v=20261115-collapse1';
 import { mountUpload } from './lib/teaching-upload.js';
 
 const $ = (s) => document.querySelector(s);
