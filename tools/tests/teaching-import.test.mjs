@@ -92,7 +92,7 @@ test('CEFR tool table cards preserve vocabulary, meaning, pronunciation, level, 
   ] };
   const data = readTeachingNote(note, { fields: ['Front', 'Back'] });
   assert.deepEqual(data, { w: 'nearly', mean: '几乎', pos: 'adv.', ipa: '/ˈnɪəli/', cefr: 'A2',
-    en: 'But they have played for nearly as long.', cn: '时间也几乎一样长。', audio: '', guid: note.guid, sound: 'nearly.mp3' });
+    en: 'But they have played for <b>nearly</b> as long.', cn: '时间也<b>几乎</b>一样长。', audio: '', guid: note.guid, sound: 'nearly.mp3' });
   const noMeaning = structuredClone(note); noMeaning.fields[1] = noMeaning.fields[1].replace('几乎', '');
   assert.equal(readTeachingNote(noMeaning, { fields: ['Front', 'Back'] }).mean, '');
   const arbitrary = { ...note, fields: [note.fields[0], note.fields[1].replace('CEFR: A2', 'Other info')] };
@@ -106,7 +106,7 @@ test('Class-based cards and explicit fields remain supported', () => {
     '<div class="word">can&#39;t</div><span class="pos">v.</span>',
     '<p class="meaning">不能</p><span class="cefr">CEFR: A2</span><p class="example-en">I <b>can&#39;t</b>.</p>',
   ] }, { fields: ['Front', 'Back'] });
-  assert.equal(data.w, "can't"); assert.equal(data.mean, '不能'); assert.equal(data.en, "I can't.");
+  assert.equal(data.w, "can't"); assert.equal(data.mean, '不能'); assert.equal(data.en, "I <b>can't</b>.");
   assert.equal(readTeachingNote({ guid: 'fields-guid', fields: ['word', '含义'] }, { fields: ['Word', 'Meaning'] }).mean, '含义');
 });
 
@@ -117,7 +117,7 @@ test('Exam vocabulary reads nested word spans without an outer div consuming the
   ] }, { fields: ['Front', 'Back'] });
   assert.equal(data.w, 'habit'); assert.equal(data.mean, '习惯');
   assert.equal(data.pos, 'n.'); assert.equal(data.ipa, '/ˈhæbɪt/'); assert.equal(data.cefr, 'B1');
-  assert.equal(data.en, 'A good habit.'); assert.equal(data.cn, '一个好习惯。');
+  assert.equal(data.en, 'A good <b>habit</b>.'); assert.equal(data.cn, '一个好习惯。');
   assert.equal(data.sound, 'habit.mp3');
   const missing = readTeachingNote({ guid: 'missing-nested-word', fields: ['<div class="word-line"><span>no word class</span></div>', '<div class="meaning">含义</div>'] }, { fields: ['Front', 'Back'] });
   assert.equal(missing.w, '');

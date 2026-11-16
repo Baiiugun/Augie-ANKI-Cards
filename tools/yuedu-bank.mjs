@@ -16,6 +16,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
 import { readApkg } from './apkg.js';
+import { readTeachingNote } from '../lib/teaching-note.js';
+import { makePresentation, verifyImportCards } from '../lib/card-presentation.js';
 import { WORK, SUPABASE_URL, ANON_KEY, BUCKET, TEACHER_EMAIL } from './config.mjs';
 
 const MEDIA_SLUG = 'yuedu';
@@ -29,30 +31,7 @@ if (!['prepare', 'upload'].includes(cmd) || !target) {
 const bye = (code) => { process.exitCode = code; setTimeout(() => process.exit(code), 80); return new Promise(() => {}); };
 const die = (msg) => { console.error('!! ' + msg); process.exit(1); };
 
-// ---------- 解析卡面 ----------
-const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
-  if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }
-  return ENT[e.toLowerCase()] ?? m;
-});
-const text = (s) => decode(String(s || '').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
-// 例句：只保留 <b>…</b>（重点词加粗），其余标签去掉；页面显示时还会再转义一遍
-const boldOnly = (s) => decode(String(s || '').replace(/<(?!\/?b>)[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
-const grab = (html, cls) => { const m = String(html).match(new RegExp(`<(div|span) class="${cls}">([\\s\\S]*?)</\\1>`)); return m ? m[2] : ''; };
-function parseNote(front, back) {
-  const snd = (front.match(/\[sound:([^\]]+)\]/) || [])[1] || '';
-  return {
-    src: text(grab(front, 'source')),
-    w: text(grab(front, 'word')),
-    pos: text(grab(front, 'pos')) || text(grab(back, 'pos')),
-    ipa: text(grab(front, 'ipa')).replace(/^\/+|\/+$/g, '').trim(),
-    mean: text(grab(back, 'meaning')),
-    cefr: text(grab(back, 'cefr')).replace(/^CEFR[:：]\s*/i, ''),
-    en: boldOnly(grab(back, 'example example-en')),
-    cn: boldOnly(grab(back, 'example example-cn')),
-    snd: snd.trim(),
-  };
-}
+// 词条解析统一使用 lib/teaching-note.js；不再维护独立的删格式规则。
 const tierId = (t) => t.replace(/\+/g, 'p').replace(/[^A-Za-z0-9-]/g, '');
 
 // ======================================================================================
@@ -84,7 +63,7 @@ if (cmd === 'prepare') {
     const board = sm.section || sm.label;
     const piece = sm.passage ? `${sm.passage}篇` : '';
     const sortBase = (Number(sm.order) || 0) * 1000;
-    const r = await readApkg(apkg, mediaDir);
+    const r = await readApkg(apkg, mediaDir, WORK);
     try {
       const deckNames = new Set(r.cards.map((c) => r.decks.get(c.did)));
       if (deckNames.size !== 1 || !deckNames.has('阅读词')) console.log(`（提示：${path.basename(apkg)} 的牌组是 ${[...deckNames].join('、')}）`);
@@ -97,7 +76,7 @@ if (cmd === 'prepare') {
         const mdl = r.models.get(n.mid);
         const fi = (name) => mdl.fields.indexOf(name);
         if (fi('Front') < 0 || fi('Back') < 0) die(`笔记类型「${mdl.name}」没有 Front/Back 字段`);
-        const d = parseNote(n.fields[fi('Front')], n.fields[fi('Back')]);
+        const parsed = readTeachingNote(n, mdl), d = { ...parsed, snd: parsed.sound };
         if (!d.w || !d.mean) die(`${path.basename(apkg)} 的笔记 ${n.id} 读不出单词或释义`);
         let audio = '';
         if (d.snd) { audio = r.mediaMap.get(d.snd) || ''; if (!audio || !fs.existsSync(path.join(mediaDir, audio))) die(`读音文件缺失：${d.snd}（${d.w}）`); usedMedia.add(audio); }
@@ -105,6 +84,8 @@ if (cmd === 'prepare') {
         if (seen.has(key)) die(`卡片编号重复：${key}（${d.w}）`); seen.add(key);
         const tags = n.tags;
         const data = { w: d.w, pos: d.pos, ipa: d.ipa, mean: d.mean, cefr: d.cefr, en: d.en, cn: d.cn, audio, guid: n.guid };
+        data.presentation = makePresentation(n, mdl, cs, r.mediaMap, r.decks);
+        data.presentation.media.forEach((name) => usedMedia.add(name));
         if (Buffer.byteLength(JSON.stringify(data)) > 19000) die(`卡片内容太长：${d.w}`);
         if (!tags.some((t) => t === `难度_${level}`)) console.log(`（提示：${d.w} 的难度标签和配套清单的 ${level} 不一致：${tags.join(' ')}）`);
         cards.push({ card_key: key, section_id: secId, ord: sortBase + i++, data });
@@ -129,6 +110,7 @@ if (cmd === 'prepare') {
 // ======================================================================================
 // upload：联网。密码只在这里输入。
 const plan = JSON.parse(fs.readFileSync(target, 'utf8'));
+verifyImportCards(plan.cards); // Reject historical lossy plans before requesting a password.
 const P = plan.paper, mediaDir = path.join(WORK, 'media', MEDIA_SLUG);
 console.log(`准备：试卷「${P.name}」，${P.sections.length} 个板块，${plan.cards.length} 个词，读音 ${plan.media.length} 个。`);
 for (const s of P.sections) console.log(`  · ${s.label} ${s.level}：${s.count} 个词`);

@@ -1,5 +1,16 @@
 import { SUPABASE_URL, ANON_KEY } from './config.js';
 import { answer, buildQueue, nextCard, previewIntervals, formatDelay } from './map-scheduler.js';
+import { formatHtml } from '../lib/card-format.js';
+import { mountOriginalCard } from '../lib/card-view.js';
+let disposeOriginal = () => {}, originalAnswers = {}, originalFace = 0;
+function showOriginal(side) {
+  disposeOriginal();
+  const card = student.current;
+  const container = $('original-card');
+  if (!card?.d.presentation) { if (container) container.hidden = true; return; }
+  container.hidden = false;
+  disposeOriginal = mountOriginalCard(container, card.d.presentation, { side, face: originalFace, answers: originalAnswers, mediaBase: SUPABASE_URL + '/storage/v1/object/public/anki-test-media/yuedu/', autoplay: true });
+}
 
 const SCHEMA = 'echoo.map.vocab.v1';
 let token = '', busy = false;
@@ -298,6 +309,7 @@ async function refreshStudent() {
   renderMyWords();
 }
 function showNext() {
+  disposeOriginal(); originalAnswers = {}; originalFace = 0;
   const cards = visibleStudentCards(studentCards(), student.picks);
   const logs = student.state.today_log || [];
   const counts = { newDone: new Set(logs.filter((l) => l[1] === 0).map((l) => l[0])).size,
@@ -321,7 +333,11 @@ function showNext() {
   $('card-source').textContent = (paper?.name || '') + ' · ' + (paper?.sections || [])
     .filter((s) => sourceIds.includes(s.id)).map((s) => s.label).join('；');
   $('meaning').textContent = card.d.mean;
-  $('example').textContent = card.d.en; $('translation').textContent = card.d.cn;
+  $('example').innerHTML = formatHtml(card.d.en); $('translation').innerHTML = formatHtml(card.d.cn);
+  let original = $('original-card');
+  if (!original) { original = node('div'); original.id = 'original-card'; $('show-answer').before(original); }
+  for (const id of ['word','word-meta','audio','meaning','example','translation']) if (card.d.presentation) $(id).hidden = true; else if (id !== 'audio') $(id).hidden = false;
+  showOriginal('q');
   $('grades').replaceChildren();
   const intervals = previewIntervals(card, now);
   ['重来','困难','良好','简单'].forEach((name, index) => {
@@ -382,7 +398,7 @@ async function initStudent() {
   };
   $('start-study').onclick = () => { showNext(); };
   $('refresh-study').onclick = () => run(async () => { await sendPending(); await refreshStudent(); showNext(); say('已同步老师布置和学习进度。'); });
-  $('show-answer').onclick = () => { if (student.current) { $('answer').hidden = false; $('show-answer').hidden = true; } };
+  $('show-answer').onclick = () => { if (student.current) { $('answer').hidden = false; $('show-answer').hidden = true; showOriginal('a'); } };
   $('audio').onclick = () => {
     if (!student.current?.d.audio) return;
     new Audio(SUPABASE_URL + '/storage/v1/object/public/anki-test-media/yuedu/' +

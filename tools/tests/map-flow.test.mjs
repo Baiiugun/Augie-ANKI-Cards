@@ -1,3 +1,4 @@
+import { makePresentation } from '../../lib/card-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {checkTags} from '../../lib/library-rules.js';
@@ -18,7 +19,7 @@ test('MAP missing database capability stops before all media and content writes'
 });
 test('MAP preview retains canonical IDs and makes no writes or legacy chapter remapping',async(t)=>{
   const calls=[];t.mock.method(globalThis,'fetch',async(url,opts)=>{calls.push(String(url));return reply(capability);});
-  const plan={paper:{paper_id:'test-book',sections:[{id:'P002'}]},cards:[{card_key:'one',data:{guid:'stable',tags}}],relationships:[{card_key:'one',section_id:'P002'}]};
+  const plan={paper:{paper_id:'test-book',sections:[{id:'P002'}]},cards:[{card_key:'one',data:{guid:'stable',tags,presentation:makePresentation({fields:['fixture'],tags:[]},{name:'Fixture',kind:0,fields:['Word'],css:'',templates:[{name:'Read',qfmt:'{{Word}}',afmt:'{{Word}}'}]},[{ord:0}],new Map())}}],relationships:[{card_key:'one',section_id:'P002'}]};
   const api={getBankCards:async(ids)=>{assert.deepEqual(ids,['test-book']);return [{card_key:'one',data:plan.cards[0].data}];}};
   const preview=await mapPreview('fixture-teacher',api,plan);assert.equal(preview.map,true);assert.equal(preview.rows[0].card_key,'one');assert.equal(preview.changes.same,1);
   await assert.rejects(()=>mapPreview('fixture-teacher',api,plan,'other-book'),/不能手动/);
@@ -26,7 +27,7 @@ test('MAP preview retains canonical IDs and makes no writes or legacy chapter re
   assert.ok(calls.every((url)=>url.endsWith('map_capabilities')));
 });
 test('MAP import checks capability first, reuses audio and saves card/source links in one RPC',async(t)=>{
-  const calls=[],p={paper:{paper_id:'fixture'},cards:[{card_key:'stable'}],relationships:[{section_id:'P002',card_key:'stable'}],fingerprint:'same'};
+  const calls=[],p={paper:{paper_id:'fixture'},cards:[{card_key:'stable',data:{presentation:makePresentation({fields:['fixture'],tags:[]},{name:'Fixture',kind:0,fields:['Word'],css:'',templates:[{name:'Read',qfmt:'{{Word}}',afmt:'{{Word}}'}]},[{ord:0}],new Map())}}],relationships:[{section_id:'P002',card_key:'stable'}],fingerprint:'same'};
   t.mock.method(globalThis,'fetch',async(url,opts)=>{
     calls.push({url:String(url),...opts});
     if(String(url).endsWith('map_capabilities'))return reply(capability);

@@ -61,6 +61,7 @@
 <div id="sync" class="sync" hidden></div>
 
 <script type="module">
+import { bindCardInteractions } from './lib/card-view.js';
 import { createApi, createMockApi, stateOf } from './lib/api.js';
 import { createStudentApi } from './lib/yuedu-api.js';
 import { mountBrowser } from './lib/browser.js';
@@ -92,6 +93,7 @@ const now = () => Date.now() + S.skew;
 const BASE_CSS = `.card{font-family:-apple-system,"PingFang SC",arial,sans-serif;font-size:22px;text-align:center;color:#000;background:#fff}
   hr#answer{border:0;border-top:1px solid #ddd;margin:14px 0}.snd-btn{display:inline-block;width:38px;height:38px;line-height:38px;border-radius:50%;background:#e8f0ff;color:#1e6fff;text-decoration:none;text-align:center;font-size:16px;margin:2px}
   img{max-width:100%;height:auto}video{max-width:100%}`;
+let typeAnswers = {}, typeAnswerKey = '';
 
 // ---------- 加载 ----------
 async function boot() {
@@ -303,13 +305,16 @@ async function doFlag(n) {   // n=1~7 想标的颜色（已经是这个颜色就
 function fixHtml(html, slug) {
   const base = mediaBase(slug);
   return html
-    .replace(/<a class="snd-btn" href="#" data-side="(q|a)" data-src="([^"]+\.mp4)">[^<]*<\/a>/g, (m, side, src) => `<video class="vid" data-side="${side}" controls playsinline preload="metadata" src="${src}"></video>`)
-    .replace(/(src|data-src)="\/media\//g, `$1="${base}`);
+    .replace(/<a class="snd-btn[^"]*"[^>]*data-side="(q|a)" data-src="([^"]+\.mp4)"[^>]*>[\s\S]*?<\/a>/g, (m, side, src) => `<video class="vid" data-side="${side}" controls playsinline preload="metadata" src="${src}"></video>`)
+    .replace(/(src|data-src|poster)="\/media\//g, `$1="${base}`)
+    .replace(/url\((["']?)\/media\//g, `url($1${base}`);
 }
 function renderSide(side) {
   const c = S.session.cur, slug = c.key.split(':')[0], ct = S.cache[slug].get(c.key), model = S.content[slug].models[ct.m];
   const html = fixHtml(side === 'q' ? ct.f : ct.b, slug);
-  host.shadowRoot.innerHTML = `<style>${BASE_CSS}${model.css}</style><div class="card">${html}</div>`;
+  if (typeAnswerKey !== c.key || side === 'q') { typeAnswerKey = c.key; typeAnswers = {}; }
+  host.shadowRoot.innerHTML = `<style>${BASE_CSS}${fixHtml(model.css, slug)}</style><div class="card card${ct.o + 1}">${html}</div>`;
+  bindCardInteractions(host.shadowRoot, { answers: typeAnswers, play: (url) => playList([url]), onSubmit: () => { if (S.session?.showing === 'q') showAnswer(); } });
   host.shadowRoot.querySelectorAll('.snd-btn').forEach((b) => b.onclick = (e) => { e.preventDefault(); playList([b.dataset.src]); });
   const sel = side === 'q' ? '[data-side="q"]' : '[data-side="a"]';
   const items = [...host.shadowRoot.querySelectorAll(`.snd-btn${sel}, video${sel}`)];

@@ -16,7 +16,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { readApkg } from './apkg.js';
-import { renderCard, rewriteMediaUrls, cleanField } from './render.js';
+import { renderCard, rewriteMediaUrls, cleanField, preserveField } from './render.js';
+import { formatCss } from '../lib/card-format.js';
 import { REPO, WORK, SLUGS, SUPABASE_URL, ANON_KEY, BUCKET, TEACHER_EMAIL } from './config.mjs';
 
 const args = process.argv.slice(2);
@@ -68,13 +69,10 @@ if (cmd === 'prepare') {
   const have = new Set(data.cards.map((c) => c.k));
 
   const mediaDir = path.join(WORK, 'media', slug);
-  const r = await readApkg(file, mediaDir);
+  const r = await readApkg(file, mediaDir, WORK);
+  for (const model of r.models.values()) model.css = formatCss(model.css, r.mediaMap);
   const SCHEME = /^([a-z][a-z0-9+.-]*:|\/|#|\{)/i;
-  const rawField = (s, mediaMap) => rewriteMediaUrls((s || '').replace(/\[sound:([^\]]+)\]/g, (all, name) => {
-    name = name.trim(); let dec = name; try { dec = decodeURIComponent(name); } catch { /* 原样 */ }
-    const f = SCHEME.test(name) ? null : (mediaMap.get(dec) ?? mediaMap.get(name) ?? null);
-    return f ? '[sound:' + f + ']' : '';
-  }), mediaMap);
+  const rawField = preserveField;
   if (r.crt !== 1716148800) console.log(`（提示：这个包的集合创建时间与 Augie 的不同；因为只导入【新卡】，到期天数不受影响。）`);
 
   const byId = new Map(r.notes.map((n) => [n.id, n]));

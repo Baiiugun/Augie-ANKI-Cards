@@ -6,7 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readApkg } from './apkg.js';
-import { renderCard, rewriteMediaUrls, cleanField } from './render.js';
+import { renderCard, rewriteMediaUrls, cleanField, preserveField } from './render.js';
+import { formatCss } from '../lib/card-format.js';
 import { REPO, SRC_DIR, WORK, SLUGS } from './config.mjs';
 
 const CRT = 1716148800;
@@ -16,11 +17,7 @@ fs.mkdirSync(WORK, { recursive: true });
 
 // 字段原文（给网页“修改文字”后重新生成卡片用）：声音/图片的文件名换成上传后的名字，找不到文件的声音标记去掉（和渲染时的处理一致）
 const SCHEME = /^([a-z][a-z0-9+.-]*:|\/|#|\{)/i;
-const rawField = (s, mediaMap) => rewriteMediaUrls((s || '').replace(/\[sound:([^\]]+)\]/g, (all, name) => {
-  name = name.trim(); let dec = name; try { dec = decodeURIComponent(name); } catch { /* 原样 */ }
-  const f = SCHEME.test(name) ? null : (mediaMap.get(dec) ?? mediaMap.get(name) ?? null);
-  return f ? '[sound:' + f + ']' : '';
-}), mediaMap);
+const rawField = preserveField;
 
 const files = fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.apkg')).sort();
 const manifest = { generated: new Date().toISOString(), note: '【临时测试系统】卡片文字内容；进度不在这里', packages: [] };
@@ -34,7 +31,8 @@ for (const f of files) {
   const slug = SLUGS[name];
   if (!slug) { console.error('!! 没有给这个包起英文名（config.mjs 的 SLUGS）:', name); process.exit(1); }
   const mediaDir = path.join(WORK, 'media', slug);
-  const r = await readApkg(path.join(SRC_DIR, f), mediaDir);
+  const r = await readApkg(path.join(SRC_DIR, f), mediaDir, WORK);
+  for (const model of r.models.values()) model.css = formatCss(model.css, r.mediaMap);
   if (r.crt !== CRT) console.warn(`!! ${name}: 集合创建时间 ${r.crt} 不是预期的 ${CRT}，到期天数可能错位`);
 
   const byId = new Map(r.notes.map((n) => [n.id, n]));

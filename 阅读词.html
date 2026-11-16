@@ -90,6 +90,8 @@
 import { createStudentApi, createMockStudentApi, stateOf } from './lib/yuedu-api.js';
 import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
 import { mediaBase } from './lib/config.js';
+import { mountOriginalCard } from './lib/card-view.js';
+import { formatHtml } from './lib/card-format.js';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -97,7 +99,9 @@ const MOCK = new URLSearchParams(location.search).get('mock') === '1';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* 忽略 */ } };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const boldHtml = (s) => esc(s).replace(/&lt;(\/?)b&gt;/g, '<$1b>');   // 例句只允许 <b>
+const boldHtml = (s) => formatHtml(s); // Shared formatting, including legacy <b>.
+let disposeOriginal = () => {};
+let originalAnswers = {}, originalKey = '';
 const normCode = (s) => (s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
 // ---------- 学习码：从链接 #k=… 取，存本机（和 Augie 的页面分开存），再把地址栏清干净 ----------
@@ -173,7 +177,7 @@ function render() {
   stopAudio();
   if (S.view === 'pick') renderPick(); else if (S.view === 'study') renderStudy(); else if (S.view === 'words') renderWords(); else renderHome();
 }
-function go(v) { S.view = v; if (v !== 'study') S.sess = null; render(); window.scrollTo(0, 0); }
+function go(v) { S.view = v; if (v !== 'study') { disposeOriginal(); disposeOriginal = () => {}; stopAudio(); S.sess = null; } render(); window.scrollTo(0, 0); }
 
 function renderHome() {
   const all = units(), q = queueFor(all), k = qn(q), st = stats();
@@ -241,12 +245,13 @@ function nextStep(keep) {
   const ss = S.sess, q = queueFor(ss.sel);
   if (!keep) { ss.cur = nextCard(q, ss.shownNew, ss.shownRev); ss.showing = 'q'; ss.t0 = Date.now(); }
   renderStudy(q);
-  if (ss.cur && ss.showing === 'q') say(ss.cur);
+  if (ss.cur && ss.showing === 'q' && !ss.cur.d.presentation) say(ss.cur);
 }
 function undoBar() {
   return S.undo.length ? `<div class="undo-list">可撤销：${S.undo.slice().reverse().map((u, i) => `<span>${i + 1}. ${esc(u.label)}</span>`).join('')}</div>` : '';
 }
 function renderStudy(q) {
+  disposeOriginal(); disposeOriginal = () => {};
   const ss = S.sess; q ||= queueFor(ss.sel); const k = qn(q), c = ss.cur, kd = c ? (c.queue === 0 ? 'n' : c.queue === 2 ? 'r' : 'l') : '';
   const top = `<div class="topbar"><button class="ghost" id="back">← 阅读词</button>
       <div class="counts" title="蓝=新词 红=学习中 绿=复习"><span class="n-new ${kd === 'n' ? 'cur' : ''}">${k.n}</span><span class="n-learn ${kd === 'l' ? 'cur' : ''}">${k.l}</span><span class="n-rev ${kd === 'r' ? 'cur' : ''}">${k.r}</span></div>
@@ -273,7 +278,16 @@ function renderStudy(q) {
     } else foot = '<button class="pri showbtn" id="show">显示答案</button>';
     app.innerHTML = `<div class="wrap">${top}<div class="card flash">${front}${back}</div>${foot}
       <div class="faint hide-s" style="margin-top:10px;text-align:center">键盘：空格 显示答案 · 1–4 作答 · Z 撤销</div></div>`;
-    $('#say').onclick = () => say(c);
+    if (d.presentation) {
+      if (originalKey !== c.key) { originalKey = c.key; originalAnswers = {}; }
+      const box = app.querySelector('.card.flash');
+      let face = ss.originalFace || 0;
+      if (face >= d.presentation.faces.length) face = ss.originalFace = 0;
+      box.innerHTML = d.presentation.faces.length > 1 ? `<p><label>卡面 <select id="original-face">${d.presentation.faces.map((f, i) => `<option value="${i}" ${i === face ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label></p><div id="original-card"></div>` : '<div id="original-card"></div>';
+      disposeOriginal = mountOriginalCard(box.querySelector('#original-card'), d.presentation, { side: ss.showing, face, mediaBase: mediaBase('yuedu'), answers: originalAnswers, autoplay: true, play: (url) => { if (!player) player = new Audio(); player.pause(); player.src = url; player.play().catch(() => {}); }, onKey: studyKey, onSubmit: () => { if (ss.showing === 'q') showAnswer(); } });
+      box.querySelector('#original-face')?.addEventListener('change', (event) => { ss.originalFace = +event.target.value; originalAnswers = {}; renderStudy(); });
+    }
+    $('#say')?.addEventListener('click', () => say(c));
     $('#sus').onclick = suspendCurrent;
     $('#show')?.addEventListener('click', showAnswer);
     app.querySelectorAll('[data-e]').forEach((b) => b.onclick = () => onAnswer(+b.dataset.e));
@@ -394,7 +408,7 @@ function setSync(bad) {
 window.addEventListener('beforeunload', (e) => { if (S.pending.length) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------- 键盘（同 Anki：空格/回车 显示答案或“良好”，1-4 作答，Z 撤销） ----------
-document.addEventListener('keydown', (e) => {
+function studyKey(e) {
   if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { if (S.view === 'study' || S.view === 'words') { e.preventDefault(); doUndo(); } return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -402,7 +416,8 @@ document.addEventListener('keydown', (e) => {
   const ss = S.sess; if (S.view !== 'study' || !ss || !ss.cur) return;
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (ss.showing === 'q') showAnswer(); else onAnswer(3); }
   else if (['1', '2', '3', '4'].includes(e.key) && ss.showing === 'a') onAnswer(+e.key);
-});
+}
+document.addEventListener('keydown', studyKey);
 
 boot();
 </script>

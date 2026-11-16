@@ -4,64 +4,9 @@ import { readApkg } from './apkg.js';
 import { prepareMapImport } from './map-import.mjs';
 import { COURSES, SOURCE_TYPES, parseFilename, checkTags, tiersFromTags } from '../lib/library-rules.js';
 const hash = (s) => crypto.createHash('sha1').update(s).digest('hex');
-const text = (s) => String(s || '').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&(#x[0-9a-f]+|#\d+|nbsp|amp|lt|gt|quot|apos|ndash|mdash|lsquo|rsquo);/gi, (raw, entity) => {
-  if (entity.startsWith('#')) {
-    const n = entity[1].toLowerCase() === 'x' ? parseInt(entity.slice(2), 16) : Number(entity.slice(1));
-    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
-  }
-  return { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’' }[entity.toLowerCase()];
-}).replace(/\s+/g, ' ').trim();
-const grab = (html, cls) => {
-  const source = String(html || '');
-  // Scan opening tags only: matching an outer word-line div must not consume its word span.
-  const re = /<([a-z][\w:-]*)\b[^>]*\bclass\s*=["']([^"']*)["'][^>]*>/gi;
-  for (const m of source.matchAll(re)) if (m[2].split(/\s+/).includes(cls)) {
-    const start = m.index + m[0].length;
-    const tags = new RegExp('<\\/?' + m[1] + '\\b[^>]*>', 'gi');
-    tags.lastIndex = start;
-    let depth = 1;
-    for (let tag = tags.exec(source); tag; tag = tags.exec(source)) {
-      if (tag[0].startsWith('</')) depth--;
-      else if (!/\/>$/.test(tag[0])) depth++;
-      if (!depth) return source.slice(start, tag.index);
-    }
-  }
-  return '';
-};
-function tableRows(html) {
-  const rows = [];
-  for (const row of String(html || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
-    const cells = [...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)];
-    if (cells.length !== 1) return [];
-    rows.push(text(cells[0][1]));
-  }
-  return rows;
-}
-function legacyTableVocabulary(front, back) {
-  const f = tableRows(front), b = tableRows(back);
-  // This is the established CEFR tool's Front/Back layout, not an arbitrary table.
-  if (f.length !== 3 || b.length !== 6 || !f[0] ||
-      f[0].normalize('NFKC').toLowerCase() !== b[0].normalize('NFKC').toLowerCase() ||
-      !/^CEFR\s*[:：]/i.test(b[2])) return {};
-  const pos = f[1];
-  const ipa = pos && b[1].toLowerCase().endsWith(' ' + pos.toLowerCase()) ? b[1].slice(0, -pos.length).trim() : b[1];
-  return { w: f[0], mean: b[3], pos, ipa, cefr: b[2].replace(/^CEFR\s*[:：]\s*/i, ''), en: b[4], cn: b[5] };
-}
-export function readTeachingNote(note, model) {
-  const f = Object.fromEntries(model.fields.map((name, i) => [name.trim().toLowerCase(), note.fields[i]]));
-  const front = f.front || '', back = f.back || '', table = legacyTableVocabulary(front, back);
-  return {
-    w: text(f.word || f.english || grab(front, 'word') || table.w),
-    mean: text(f.meaning || f.mean || f.definition || grab(back, 'meaning') || table.mean),
-    pos: text(f.pos || grab(front, 'pos') || grab(back, 'pos') || table.pos),
-    ipa: text(f.ipa || grab(front, 'ipa') || table.ipa),
-    cefr: text(f.cefr || grab(back, 'cefr') || table.cefr).replace(/^CEFR\s*[:：]\s*/i, ''),
-    en: text(f.example || f.exampleen || grab(back, 'example-en') || table.en),
-    cn: text(f.examplecn || grab(back, 'example-cn') || table.cn),
-    audio: '', guid: note.guid,
-    sound: (String(f.audio || front + '\n' + back).match(/\[sound:([^\]]+)\]/) || [])[1] || '',
-  };
-}
+export { readTeachingNote } from '../lib/teaching-note.js';
+import { readTeachingNote } from '../lib/teaching-note.js';
+import { makePresentation } from '../lib/card-presentation.js';
 export async function prepareTeachingImport(file, filename, options, workDir) {
   const meta = { ...parseFilename(filename), ...options };
   // File identity always comes from the actual filename, never deck names or form overrides.
@@ -83,6 +28,8 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
     for (const n of r.notes.filter((x) => activeNotes.has(x.id))) {
       const model = r.models.get(n.mid);
       const { sound, ...d } = readTeachingNote(n, model);
+      d.presentation = makePresentation(n, model, r.cards.filter((c) => c.nid === n.id), r.mediaMap, r.decks);
+      d.presentation.media.forEach((name) => media.add(name));
       const result = checkTags(n.tags, meta, !!options.supplement);
       result.warnings.forEach((warning) => warnings.add(warning));
       if (!n.guid || guids.has(n.guid)) errors.push(`笔记 ${n.id}：缺少或重复的固定编号`);
