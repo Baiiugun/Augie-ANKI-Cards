@@ -9,6 +9,7 @@
   :root{--bg:#f5f6f8;--card:#fff;--ink:#1c2230;--sub:#5f6877;--faint:#8b93a1;--line:#e2e5ea;--acc:#2f6fdb;--acc-ink:#fff;--acc-weak:#e9f0fd;--new:#2f6fdb;--learn:#d4453c;--rev:#2a9a49;--sus:#b27a00;--sus-bg:#fff6dc;--ok-bg:#e8f6ec;--warn:#ff9800;--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 14px rgba(0,0,0,.05)}
   @media (prefers-color-scheme:dark){:root{--bg:#13161b;--card:#1c2027;--ink:#e6e9ef;--sub:#a1a9b6;--faint:#7b8494;--line:#2d333d;--acc:#6b9cf4;--acc-ink:#0d1320;--acc-weak:#1f2c44;--new:#6b9cf4;--learn:#ef7a71;--rev:#5ec27b;--sus:#e2b440;--sus-bg:#362c18;--ok-bg:#1b3324;--shadow:none}}
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
   button,input,select{font:inherit;color:inherit}
   button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 12px}
@@ -43,8 +44,8 @@
   .tree .s{padding:9px 12px 9px 40px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
   .tree label{display:flex;gap:10px;align-items:center;flex:1;cursor:pointer}
   .tree .dis{color:var(--faint)}
-  .bar{height:8px;background:var(--bg);border-radius:99px;overflow:hidden;display:flex;min-width:80px}
-  .bar i{display:block;height:100%}
+  .progress-bar{height:8px;background:var(--bg);border-radius:99px;overflow:hidden;display:flex;min-width:80px}
+  .progress-bar i{display:block;height:100%}
   .chart{display:flex;align-items:flex-end;gap:4px;height:120px;padding-top:8px}
   .chart .c{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:11px;color:var(--faint)}
   .chart .c i{display:block;width:100%;max-width:28px;background:var(--acc);border-radius:4px 4px 0 0;min-height:2px}
@@ -65,6 +66,15 @@
   .recipient-summary.err{color:var(--learn)}
   .assignment-bar .msg{max-height:76px;overflow-y:auto}
   .assigned-actions{padding:10px 0;border-bottom:1px solid var(--line)}
+  .student-tabs{margin-bottom:14px;padding:10px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .library-results{margin:12px 0;border:1px solid var(--line);border-radius:10px;padding:0 12px}
+  .library-results summary{padding:10px 0;cursor:pointer;color:var(--acc)}
+  .library-result{padding:9px 0;border-top:1px solid var(--line)}
+  .library-result .sp{min-width:180px;overflow-wrap:anywhere}
+  .library-pagination{justify-content:center;padding:12px 0}
+  .active-library{margin-top:16px}
+  .word-filters{margin:12px 0}
+  .word-filters summary{cursor:pointer;color:var(--sub)}
   @media(max-width:600px){.assignment-bar{top:0;padding:10px}.assignment-bar .row{gap:7px}.assignment-bar #lib-assign{width:100%}.tree .s{flex-wrap:wrap;padding-left:16px}}
   /* LIBRARY-COLLAPSE-V1 */
   .library-content[hidden]{display:none!important}
@@ -104,6 +114,7 @@ import { login } from './lib/teacher-api.js';
 import { createTeacherApi, createMockTeacherApi } from './lib/yuedu-api.js?v=20261115-unified-library1';
 import { mountLibrary } from './lib/teaching-library.js?v=20261115-unified-library1';
 import { mountUpload } from './lib/teaching-upload.js?v=20261115-unified-library1';
+import { mountTeachingBrowser } from './lib/teaching-card-browser.js';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -123,6 +134,7 @@ const noSql = (m) => (/kind|anki_test_bank|anki_test_assign|anki_test_teacher_as
 const secTitle = (s) => s.label || [s.board, s.piece].filter(Boolean).join(' · ');
 
 let api = null, learners = [], papers = [], view = new URLSearchParams(location.search).has('import') ? 'import' : 'list', cur = null;
+let learnerTab = 'manage';
 
 // ---------- 登录（和 Augie 的老师页共用同一个登录状态） ----------
 function showLogin(msg) {
@@ -181,10 +193,10 @@ function showList() {
     <div class="card"><h2>新增学生</h2>
       <div class="row"><input type="text" id="nn" placeholder="学生名字，如 LXH-刘芯合" maxlength="40" style="width:240px"><button class="pri" id="add">新增并生成专属链接</button></div>
       <div class="msg" id="addmsg"></div>
-      <p class="faint">权限固定：只背阅读词；能“不再背诵”和恢复；不能删除；看不到 Deck 和标签。新增后进入学生页面给他布置词库。</p></div>`;
+      <p class="faint">默认允许学生管理自己的卡片；老师可在学习管理中关闭。新增后进入学生页面给他布置词库。</p></div>`;
   bindNav();
   app.querySelectorAll('[data-copy]').forEach((b) => b.onclick = async () => { const l = learners.find((x) => x.id === b.dataset.copy); try { await navigator.clipboard.writeText(linkOf(l)); b.textContent = '已复制 ✓'; } catch (e) { b.textContent = '复制失败，进入后手动复制'; } });
-  app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => { cur = learners.find((x) => x.id === b.dataset.open); view = 'student'; openLearner(cur); });
+  app.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => { cur = learners.find((x) => x.id === b.dataset.open); learnerTab = 'manage'; view = 'student'; openLearner(cur); });
   // 停用 / 恢复启用：停用后学生链接打不开，数据全部保留
   app.querySelectorAll('[data-pause]').forEach((b) => b.onclick = async () => {
     const l = learners.find((x) => x.id === b.dataset.pause), next = l.status === 'paused' ? 'active' : 'paused';
@@ -205,7 +217,7 @@ function showList() {
     $('#add').disabled = true;
     try {
       await api.addLearner(name, code); learners = (await api.listLearners()).filter(isYd);
-      cur = learners.find((l) => l.code === code); view = 'student'; openLearner(cur, `已新增 ${name}。下一步：在下面给他布置词库，再把专属链接发给他。`);
+      cur = learners.find((l) => l.code === code); learnerTab = 'assign'; view = 'student'; openLearner(cur, `已新增 ${name}。下一步：在“选词布置”里给他布置词库，再把专属链接发给他。`);
     } catch (e) { $('#addmsg').innerHTML = `<span class="err">失败：${esc(e.message)}${noSql(e.message)}</span>`; $('#add').disabled = false; }
   };
 }
@@ -225,8 +237,7 @@ async function openLearner(l, note) {
   app.innerHTML = '<p class="faint">加载中…</p>';
   try {
     const [asg, rows, stats] = await Promise.all([api.listAssignments(l.id), api.getCards(l.id), api.dailyStats(l.id, 14).catch(() => [])]);
-    const pids = [...new Set([...asg.map((a) => a.paper_id), ...rows.length ? (papers || []).map((p) => p.paper_id) : []])];
-    const bank = await api.getBankCards(pids);
+    const bank = await api.getBankCardsByKeys(rows.map((c) => c.card_key));
     renderLearner(l, asg, rows, stats, bank, note);
   } catch (e) {
     if (authFail(e)) { ssSet('anki_test_teacher_token', null); return showLogin('登录过期，请重新登录'); }
@@ -239,30 +250,41 @@ function renderLearner(l, asg, rows, stats, bank, note) {
   const asgSet = new Set(asg.map((a) => a.paper_id + '|' + a.section_id));
   const asgAt = Object.fromEntries(asg.map((a) => [a.paper_id + '|' + a.section_id, a.assigned_at]));
   // 每个板块的进度
-  const prog = {};
-  for (const c of rows) {
-    const b = bmap.get(c.card_key); if (!b) continue;
-    const scopes = b.data?.map_schema === 'echoo.map.vocab.v1' ? asg.filter((a) => a.paper_id === b.paper_id && a.card_keys?.includes(c.card_key)).map((a) => a.paper_id + '|' + a.section_id) : [b.paper_id + '|' + b.section_id];
-    for (const u of scopes) { const o = (prog[u] ||= { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0, seen: 0 });
-    o.total++; if (c.reps > 0) o.seen++;
-    if (c.suspended) { o.sus++; continue; }
-    if (c.queue === 0) o.n++; else if (c.queue === 2) { o.r++; if (c.due <= today) o.due++; } else { o.l++; if (c.queue === 3 ? c.due <= today : c.due <= Date.now() / 1000 + 1200) o.due++; }
+  const scopesOf = (b, key) => b.data?.map_schema === 'echoo.map.vocab.v1'
+    ? asg.filter((a) => a.paper_id === b.paper_id && a.card_keys?.includes(key)).map((a) => a.paper_id + '|' + a.section_id)
+    : [b.paper_id + '|' + b.section_id];
+  const assignedRowsNow = () => rows.filter((c) => { const b = bmap.get(c.card_key); return b && scopesOf(b, c.card_key).some((u) => asgSet.has(u)); });
+  function countRows(list) {
+    const o = { total: 0, n: 0, l: 0, r: 0, sus: 0, del: 0, due: 0, seen: 0 };
+    for (const c of list) {
+      if (c.deleted) { o.del++; continue; }
+      o.total++; if (c.reps > 0) o.seen++;
+      if (c.suspended) { o.sus++; continue; }
+      if (c.queue === 0) o.n++; else if (c.queue === 2) { o.r++; if (c.due <= today) o.due++; }
+      else { o.l++; if (c.queue === 3 ? c.due <= today : c.due <= Date.now() / 1000 + 1200) o.due++; }
+    }
+    return o;
   }
-  }
+  const computeProgress = () => {
+    const groups = {};
+    for (const c of assignedRowsNow()) for (const u of scopesOf(bmap.get(c.card_key), c.card_key)) if (asgSet.has(u)) (groups[u] ||= []).push(c);
+    return Object.fromEntries(Object.entries(groups).map(([u, list]) => [u, countRows(list)]));
+  };
+  const prog = computeProgress();
   const ps = papers || [];
   // ② 已布置 + 进度
   const asgRows = ps.flatMap((p) => p.sections.filter((s) => asgSet.has(p.paper_id + '|' + s.id)).map((s) => ({ p, s, u: p.paper_id + '|' + s.id })));
-  const tot = { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0 };
+  const tot = countRows(assignedRowsNow());
   const progRows = asgRows.map(({ p, s, u }) => {
-    const o = prog[u] || { total: 0, n: 0, l: 0, r: 0, sus: 0, due: 0 }; for (const k in tot) tot[k] += o[k] || 0; const t = o.total || 1;
-    return `<tr><td>${esc(p.name)}</td><td>${esc(secTitle(s))} <span class="chip lv">${esc(s.level)}</span></td><td class="num">${o.total}</td><td class="num n-new">${o.n}</td><td class="num n-learn">${o.l}</td><td class="num n-rev">${o.r}</td><td class="num n-sus">${o.sus}</td><td class="num">${o.due}</td>
-      <td style="width:16%"><div class="bar"><i style="width:${o.r / t * 100}%;background:var(--rev)"></i><i style="width:${o.l / t * 100}%;background:var(--learn)"></i><i style="width:${o.sus / t * 100}%;background:var(--sus)"></i></div></td>
+    const o = prog[u] || countRows([]); const t = o.total || 1;
+    return `<tr data-progress-unit="${esc(u)}"><td>${esc(p.name)}</td><td>${esc(secTitle(s))} <span class="chip lv">${esc(s.level)}</span></td><td class="num" data-progress-stat="total">${o.total}</td><td class="num n-new" data-progress-stat="n">${o.n}</td><td class="num n-learn" data-progress-stat="l">${o.l}</td><td class="num n-rev" data-progress-stat="r">${o.r}</td><td class="num n-sus" data-progress-stat="sus">${o.sus}</td><td class="num" data-progress-stat="del">${o.del}</td><td class="num" data-progress-stat="due">${o.due}</td>
+      <td style="width:16%"><div class="progress-bar"><i style="width:${o.r / t * 100}%;background:var(--rev)"></i><i style="width:${o.l / t * 100}%;background:var(--learn)"></i><i style="width:${o.sus / t * 100}%;background:var(--sus)"></i></div></td>
       <td class="faint">${fmtDay(asgAt[u])}</td><td><button data-un="${esc(u)}" title="仅撤销该学生本篇的布置；总词库、进度和答题记录保留">撤销本篇</button></td></tr>`;
   }).join('');
   const paperActions = ps.filter((p) => asgRows.some((a) => a.p.paper_id === p.paper_id)).map((p) => {
     const assignedSections = asgRows.filter((a) => a.p.paper_id === p.paper_id);
-    const n = assignedSections.reduce((sum, a) => sum + (prog[a.u]?.total || 0), 0);
-    return `<div class="row assigned-actions"><b>${esc(p.name)}</b><span class="faint">已布置 ${assignedSections.length} 篇 · ${n} 词</span><span class="sp"></span><button data-un-paper="${esc(p.paper_id)}">撤销整套布置</button></div>`;
+    const n = countRows(assignedRowsNow().filter((c) => bmap.get(c.card_key).paper_id === p.paper_id)).total;
+    return `<div class="row assigned-actions"><b>${esc(p.name)}</b><span class="faint" data-assigned-summary="${esc(p.paper_id)}">已布置 ${assignedSections.length} 篇 · ${n} 词</span><span class="sp"></span><button data-un-paper="${esc(p.paper_id)}">撤销整套布置</button></div>`;
   }).join('');
   // ③ 每天答题
   const byDay = Object.fromEntries((stats || []).map((s) => [s.day_no, s]));
@@ -270,23 +292,29 @@ function renderLearner(l, asg, rows, stats, bank, note) {
   const mx = Math.max(1, ...days.map((d) => byDay[d]?.answers || 0));
   const dateOf = (d) => { const t = new Date((1716148800 + d * 86400) * 1000 + 8 * 3600000); return (t.getUTCMonth() + 1) + '/' + t.getUTCDate(); };
   // ④ 不再背诵
-  const susList = rows.filter((c) => c.suspended && bmap.has(c.card_key)).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  const susList = assignedRowsNow().filter((c) => c.suspended && !c.deleted).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   const secOfB = (b) => { const p = ps.find((x) => x.paper_id === b.paper_id), s = p?.sections.find((x) => x.id === b.section_id); return s ? (s.piece || s.board) : ''; };
 
   app.innerHTML = `${nav()}
-    <div class="card"><div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1><span class="chip">学生版阅读词</span><span class="sp"></span><span class="faint">最近打开：${fmtTime(l.last_active)}</span></div>
+    <div class="card"><div class="row"><button class="ghost" id="bk">← 学生列表</button><h1 style="margin:0">${esc(l.name)}</h1><span class="chip">学生版</span><button class="pri" id="open-card-manager">管理卡片</button><span class="sp"></span><span class="faint">最近打开：${fmtTime(l.last_active)}</span></div>
       <div class="row" style="margin-top:10px"><span class="sub">专属链接</span><span class="linkbox sp">${esc(linkOf(l))}</span><button id="cp">复制</button></div>
       ${note ? `<p class="ok">${esc(note)}</p>` : ''}</div>
 
+    <div class="row student-tabs" role="tablist" aria-label="学生管理">
+      ${[['cards', '管理卡片'], ['manage', '学习管理'], ['progress', '已布置与进度'], ['assign', '选词布置']].map(([id, label]) => `<button id="student-tab-${id}" role="tab" data-student-tab="${id}" aria-controls="student-panel-${id}">${label}</button>`).join('')}
+    </div>
+    <section id="student-panel-cards" role="tabpanel" aria-labelledby="student-tab-cards" hidden><div class="card"><h2>管理 ${esc(l.name)} 的卡片</h2><p class="sub">暂停只退出背诵队列；“删除”放入这位学生的“已删除”，可以恢复。学习进度保留。暂停、隐藏及标记只影响当前学生；修改卡片文字会同步给所有已布置这张卡的学生，可恢复原文。</p><div id="student-card-manager"></div></div></section>
+    <section id="student-panel-progress" role="tabpanel" aria-labelledby="student-tab-progress" hidden>
     <div class="card"><h2>已布置 · 背诵进度</h2>
       <p class="sub">撤销布置后，${esc(l.name)} 刷新页面就看不到对应的词。总词库、学习进度和答题记录保留，以后可以重新布置。</p>
-      ${progRows ? `${paperActions}<div class="tbl-wrap"><table><thead><tr><th>材料</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">不再背诵</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
-        <tbody>${progRows}<tr><td><b>合计</b></td><td></td><td class="num"><b>${tot.total}</b></td><td class="num n-new">${tot.n}</td><td class="num n-learn">${tot.l}</td><td class="num n-rev">${tot.r}</td><td class="num n-sus">${tot.sus}</td><td class="num">${tot.due}</td><td></td><td></td><td></td></tr></tbody></table></div>
-        <p class="faint">进度条：<span class="n-rev">绿 = 已进入复习</span> · <span class="n-learn">红 = 学习中</span> · <span class="n-sus">黄 = 不再背诵</span> · 空白 = 还没学。</p>` : '<div class="empty">还没布置词库，请在下方选词。</div>'}
-      <div class="msg" id="umsg"></div></div>
+      ${progRows ? `${paperActions}<div class="tbl-wrap"><table><thead><tr><th>材料</th><th>板块</th><th class="num">共</th><th class="num">新词</th><th class="num">学习中</th><th class="num">复习中</th><th class="num">暂停</th><th class="num">已删除</th><th class="num">今天待复习</th><th>进度</th><th>布置日期</th><th></th></tr></thead>
+        <tbody>${progRows}<tr data-progress-total><td><b>合计</b></td><td></td><td class="num" data-progress-stat="total"><b>${tot.total}</b></td><td class="num n-new" data-progress-stat="n">${tot.n}</td><td class="num n-learn" data-progress-stat="l">${tot.l}</td><td class="num n-rev" data-progress-stat="r">${tot.r}</td><td class="num n-sus" data-progress-stat="sus">${tot.sus}</td><td class="num" data-progress-stat="del">${tot.del}</td><td class="num" data-progress-stat="due">${tot.due}</td><td></td><td></td><td></td></tr></tbody></table></div>
+        <p class="faint">进度条：<span class="n-rev">绿 = 已进入复习</span> · <span class="n-learn">红 = 学习中</span> · <span class="n-sus">黄 = 不再背诵</span> · 空白 = 还没学。</p>` : '<div class="empty">还没布置词库，请切换到“选词布置”。</div>'}
+      <div class="msg" id="umsg"></div></div></section>
 
-    <div id="assignment-picker"></div>
+    <section id="student-panel-assign" role="tabpanel" aria-labelledby="student-tab-assign" hidden><div id="assignment-picker"></div></section>
 
+    <section id="student-panel-manage" role="tabpanel" aria-labelledby="student-tab-manage" hidden>
     <div class="grid2">
       <div class="card"><h2>每天答了多少次（最近 14 天，凌晨 4 点换天）</h2>
         <div class="chart">${days.map((d) => { const v = byDay[d]?.answers || 0; return `<div class="c" title="${dateOf(d)}：答题 ${v} 次，新学 ${byDay[d]?.new_cards || 0}，复习 ${byDay[d]?.review_cards || 0}"><span>${v || ''}</span><i class="${v ? '' : 'z'}" style="height:${v / mx * 80}%"></i><span>${dateOf(d)}</span></div>`; }).join('')}</div></div>
@@ -295,19 +323,57 @@ function renderLearner(l, asg, rows, stats, bank, note) {
           <label>复习上限 <input type="number" id="rpd" min="0" max="10000" value="${l.rev_per_day}" style="width:90px"> 个/天</label><button id="savelim">保存</button></div>
         <div class="msg" id="lmsg"></div>
         <h3>这个学生能做什么</h3>
-        <ul class="sub" style="margin:0;padding-left:20px"><li>✅ 背阅读词，自己选今天背哪几篇</li><li>✅ “不再背诵”某个词，也能恢复；最近 3 步操作都能撤销</li><li>❌ 删除词（没有删除按钮，数据库也不接受）</li><li>❌ 看到 Deck、标签（只看到材料、篇章、难度）</li></ul></div>
+        <label><input type="checkbox" id="self-manage" ${l.self_manage ? 'checked' : ''}> 允许学生自己管理卡片：暂停/取消暂停、设为今天复习、个人列表删除/恢复、隐藏标签</label>
+        <p class="sub">学生和老师使用同一套 Augie 卡片管理界面；颜色标记始终可用。关闭自主管理后，学生可查看和标记，其他管理操作由老师执行。</p><div class="msg" id="permission-msg"></div></div>
     </div>
 
-    <div class="card"><h2>学生点过“不再背诵”的词 <span class="chip old">${susList.length}</span></h2>
+    <div class="card" id="suspended-manager-summary"><h2>已暂停的卡片 <span class="chip old">${susList.length}</span></h2>
       ${susList.length ? `<div class="tbl-wrap" style="max-height:360px;overflow-y:auto"><table><thead><tr><th>单词</th><th>意思</th><th>篇章</th><th>时间</th><th></th></tr></thead><tbody>
         ${susList.map((c) => { const b = bmap.get(c.card_key); return `<tr><td><b>${esc(b.data.w)}</b></td><td>${esc(b.data.mean)}</td><td>${esc(secOfB(b))}</td><td class="faint">${fmtTime(c.updated_at)}</td><td style="text-align:right"><button data-res="${esc(c.card_key)}">恢复</button></td></tr>`; }).join('')}
         </tbody></table></div>` : '<p class="sub">还没有。</p>'}
-      <div class="msg" id="smsg"></div></div>`;
+      <div class="msg" id="smsg"></div></div></section>`;
   bindNav();
   $('#bk').onclick = () => { cur = null; showList(); };
   $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(linkOf(l)); $('#cp').textContent = '已复制 ✓'; } catch (e) { $('#cp').textContent = '请手动复制'; } };
   const redraw = (n) => renderLearner(l, asg, rows, stats, bank, n);
-  mountLibrary($('#assignment-picker'), { api, papers: ps, learner: l, onAssigned: (msg) => openLearner(l, msg) });
+  let libraryMounted = false, managerMounted = false, manager = null;
+  async function loadManager() {
+    const host = $('#student-card-manager'); managerMounted = true; host.textContent = '正在读取这个学生已布置的卡片…';
+    try {
+      const state = await api.getManagementState(l.id);
+      if (!host.isConnected) return;
+      manager = mountTeachingBrowser(host, { state, api, teacher: true, learnerId: l.id,
+        onChange: (states) => { for (const c of states.values()) { const old = rows.find((x) => x.card_key === c.key); if (old) Object.assign(old, { suspended: c.suspended, deleted: c.deleted, flag: c.flag, due: c.due }); const b = bmap.get(c.key); if (b) b.data = c.d; } syncProgress(); },
+      });
+    } catch (e) { managerMounted = false; host.textContent = e.message; }
+  }
+  function selectTab(id, focus = false) {
+    learnerTab = id;
+    app.querySelectorAll('[data-student-tab]').forEach((b) => {
+      const active = b.dataset.studentTab === id;
+      b.classList.toggle('on', active); b.setAttribute('aria-selected', String(active)); b.tabIndex = active ? 0 : -1;
+      $('#student-panel-' + b.dataset.studentTab).hidden = !active;
+      if (active && focus) b.focus();
+    });
+    if (id === 'cards' && !managerMounted) loadManager();
+    else if (id === 'cards') manager?.refresh();
+    if (id === 'assign' && !libraryMounted) {
+      mountLibrary($('#assignment-picker'), { api, papers: ps, learner: l, onAssigned: (msg) => { learnerTab = 'progress'; return openLearner(l, msg); } });
+      libraryMounted = true;
+    }
+  }
+  $('#open-card-manager').onclick = () => selectTab('cards');
+  const tabIds = ['cards', 'manage', 'progress', 'assign'];
+  app.querySelectorAll('[data-student-tab]').forEach((b) => {
+    b.onclick = () => selectTab(b.dataset.studentTab);
+    b.onkeydown = (ev) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+      ev.preventDefault();
+      const i = tabIds.indexOf(b.dataset.studentTab);
+      selectTab(ev.key === 'Home' ? tabIds[0] : ev.key === 'End' ? tabIds[tabIds.length - 1] : tabIds[(i + (ev.key === 'ArrowRight' ? 1 : tabIds.length - 1)) % tabIds.length], true);
+    };
+  });
+  selectTab(learnerTab);
   let unassigning = false;
   async function revoke(p, secs, label) {
     if (unassigning) return;
@@ -327,16 +393,43 @@ function renderLearner(l, asg, rows, stats, bank, note) {
     const p = ps.find((x) => x.paper_id === b.dataset.unPaper);
     return revoke(p, asgRows.filter((a) => a.p.paper_id === p.paper_id).map((a) => a.s.id), '这套材料中已布置的全部篇章');
   });
+  $('#self-manage').onchange = async (e) => {
+    const checked = e.target.checked; e.target.disabled = true;
+    try { await api.updateLearner(l.id, { self_manage: checked }); l.self_manage = checked; $('#permission-msg').textContent = '已保存，学生刷新后生效。'; }
+    catch (error) { e.target.checked = !!l.self_manage; $('#permission-msg').textContent = error.message; }
+    finally { e.target.disabled = false; }
+  };
   $('#savelim').onclick = async () => {
     const n = Math.max(0, Math.min(1000, Math.round(+$('#npd').value || 0))), r = Math.max(0, Math.min(10000, Math.round(+$('#rpd').value || 0)));
     try { await api.updateLearner(l.id, { new_per_day: n, rev_per_day: r }); l.new_per_day = n; l.rev_per_day = r; $('#lmsg').innerHTML = `<span class="ok">已保存：每天新词 ${n}，复习上限 ${r}。学生刷新页面后生效。</span>`; }
     catch (e) { $('#lmsg').innerHTML = `<span class="err">失败：${esc(e.message)}</span>`; }
   };
-  app.querySelectorAll('[data-res]').forEach((b) => b.onclick = async () => {
-    b.disabled = true;
-    try { await api.setSuspended(l.id, [b.dataset.res], false); const c = rows.find((x) => x.card_key === b.dataset.res); c.suspended = false; redraw(`已恢复「${bmap.get(c.card_key).data.w}」`); }
-    catch (e) { $('#smsg').innerHTML = `<span class="err">失败：${esc(e.message)}</span>`; b.disabled = false; }
-  });
+  function bindRestoreButtons() {
+    app.querySelectorAll('[data-res]').forEach((b) => b.onclick = async () => {
+      b.disabled = true;
+      try { await api.manageCards(l.id, 'suspend', [b.dataset.res], { value: false }); rows.find((c) => c.card_key === b.dataset.res).suspended = false; syncProgress(); manager?.refresh(); }
+      catch (e) { $('#smsg').textContent = e.message; b.disabled = false; }
+    });
+  }
+  function syncProgress() {
+    Object.keys(prog).forEach((k) => delete prog[k]); Object.assign(prog, computeProgress());
+    app.querySelectorAll('[data-progress-unit]').forEach((tr) => {
+      const o = prog[tr.dataset.progressUnit] || countRows([]);
+      tr.querySelectorAll('[data-progress-stat]').forEach((cell) => { cell.textContent = o[cell.dataset.progressStat] || 0; });
+      tr.querySelectorAll('.progress-bar i').forEach((bar, i) => { bar.style.width = [o.r, o.l, o.sus][i] / (o.total || 1) * 100 + '%'; });
+    });
+    const sum = countRows(assignedRowsNow());
+    app.querySelectorAll('[data-progress-total] [data-progress-stat]').forEach((cell) => { cell.textContent = sum[cell.dataset.progressStat] || 0; });
+    app.querySelectorAll('[data-assigned-summary]').forEach((node) => {
+      const id = node.dataset.assignedSummary, n = countRows(assignedRowsNow().filter((c) => bmap.get(c.card_key).paper_id === id)).total;
+      node.textContent = '已布置 ' + asgRows.filter((a) => a.p.paper_id === id).length + ' 篇 · ' + n + ' 词';
+    });
+    const paused = assignedRowsNow().filter((c) => c.suspended && !c.deleted);
+    $('#suspended-manager-summary').innerHTML = '<h2>已暂停的卡片 <span class="chip old">' + paused.length + '</span></h2>' +
+      (paused.length ? '<div class="tbl-wrap"><table><thead><tr><th>单词</th><th>意思</th><th>篇章</th><th></th></tr></thead><tbody>' + paused.map((c) => { const b = bmap.get(c.card_key); return `<tr><td>${esc(b.data.w)}</td><td>${esc(b.data.mean)}</td><td>${esc(secOfB(b))}</td><td><button data-res="${esc(c.card_key)}">恢复</button></td></tr>`; }).join('') + '</tbody></table></div>' : '<p class="sub">还没有。</p>') + '<div id="smsg" class="msg"></div>';
+    bindRestoreButtons();
+  }
+  bindRestoreButtons();
 }
 
 // ---------- 词库 ----------

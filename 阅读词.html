@@ -93,6 +93,7 @@ import { createStudentApi, createMockStudentApi, stateOf } from './lib/yuedu-api
 import { CFG, answer, previewIntervals, formatDelay, buildQueue, nextCard } from './lib/anki-sched.js';
 import { mediaBase } from './lib/config.js';
 import { mountOriginalCard } from './lib/card-view.js';
+import { mountTeachingBrowser } from './lib/teaching-card-browser.js';
 import { formatHtml } from './lib/card-format.js';
 
 const $ = (s) => document.querySelector(s);
@@ -117,14 +118,15 @@ let code = '';
 
 // ---------- 状态 ----------
 const S = { api: null, learner: null, skew: 0, today: 0, papers: [], cards: new Map(), log: [], pending: [], flushing: false,
-  view: 'home', sess: null, undo: [], wf: { unit: 'all', st: 'all', q: '' } };
+  managed: false, review: [], browser: null, view: 'home', sess: null, undo: [], wf: { unit: 'all', st: 'all', q: '' } };
 const UNDO_MAX = 3;
 const now = () => Date.now() + S.skew;
 const unitOf = (c) => c.paper + '|' + c.sec;
 const unitsOf = (c) => (c.d.source_sections || [c.sec]).map((s) => c.paper + '|' + s);
 const paperOf = (id) => S.papers.find((p) => p.paper_id === id);
 const secOf = (pid, sid) => (paperOf(pid)?.sections || []).find((s) => s.id === sid);
-const units = () => S.papers.flatMap((p) => p.sections.map((s) => p.paper_id + '|' + s.id));
+const visiblePapers = () => S.papers.map((p) => ({ ...p, sections: p.sections.filter((s) => [...S.cards.values()].some((c) => !c.deleted && c.paper === p.paper_id && (c.d.source_sections || [c.sec]).includes(s.id))) })).filter((p) => p.sections.length);
+const units = () => visiblePapers().flatMap((p) => p.sections.map((s) => p.paper_id + '|' + s.id));
 const secTitle = (s) => s ? (s.label || [s.board, s.piece].filter(Boolean).join(' · ')) : '';
 const srcLine = (c) => { const p = paperOf(c.paper); return [p?.name || '', ...(c.d.source_sections || [c.sec]).map((id) => secTitle(secOf(c.paper, id)))].filter(Boolean).join(' · '); };
 const kind = (c) => (c.suspended ? 'sus' : c.type === 0 ? 'new' : c.type === 2 && c.queue === 2 ? 'rev' : 'learn');
@@ -141,7 +143,7 @@ async function boot() {
 }
 async function refresh() {
   const r = await S.api.getState();
-  S.learner = r.learner; S.skew = r.nowMs - Date.now(); S.today = r.today;
+  S.managed = r.managed; S.review = r.review || []; S.learner = r.learner; S.skew = r.nowMs - Date.now(); S.today = r.today;
   S.papers = [...r.papers].sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name, 'zh'));
   S.cards = new Map(r.cards.map((c) => [c.key, c]));
   S.log = r.todayLog.map((x) => ({ key: x[0], prev_type: x[1], type: x[2] }));
@@ -164,13 +166,13 @@ function todayCounts() { return { newDone: new Set(S.log.filter((l) => l.prev_ty
 const limits = () => ({ newPerDay: S.learner.new_per_day, revPerDay: S.learner.rev_per_day });
 function queueFor(sel) {
   const set = sel ? new Set(sel) : null;
-  const list = [...S.cards.values()].filter((c) => !set || unitsOf(c).some((u) => set.has(u)));
+  const list = [...S.cards.values()].filter((c) => !c.deleted && (!set || unitsOf(c).some((u) => set.has(u))));
   return buildQueue(list, now(), todayCounts(), limits());
 }
 const qn = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.length + q.learnAhead.length, r: q.reviews.length });
 function stats(sel) {
   const set = sel ? new Set(sel) : null, o = { total: 0, new: 0, learn: 0, rev: 0, sus: 0 };
-  for (const c of S.cards.values()) { if (set && !unitsOf(c).some((u) => set.has(u))) continue; o.total++; o[kind(c)]++; }
+  for (const c of S.cards.values()) { if (c.deleted) continue; if (set && !unitsOf(c).some((u) => set.has(u))) continue; o.total++; o[kind(c)]++; }
   return o;
 }
 
@@ -179,16 +181,16 @@ function render() {
   stopAudio();
   if (S.view === 'pick') renderPick(); else if (S.view === 'study') renderStudy(); else if (S.view === 'words') renderWords(); else renderHome();
 }
-function go(v) { S.view = v; if (v !== 'study') { disposeOriginal(); disposeOriginal = () => {}; stopAudio(); S.sess = null; } render(); window.scrollTo(0, 0); }
+function go(v) { if (S.browser) { S.browser.destroy(); S.browser = null; } S.view = v; if (v !== 'study') { disposeOriginal(); disposeOriginal = () => {}; stopAudio(); S.sess = null; } render(); window.scrollTo(0, 0); }
 
 function renderHome() {
   const all = units(), q = queueFor(all), k = qn(q), st = stats();
-  const body = !all.length ? `<div class="card empty"><div class="big">📭</div><h2>老师还没有给你布置词</h2><div class="sub">老师布置之后，这里会出现「阅读词」，点进去就能背。</div></div>`
+  const body = !all.length ? `<div class="card empty"><div class="big">📭</div><h2>${S.cards.size ? '当前卡片都已隐藏' : '老师还没有给你布置词'}</h2><div class="sub">${S.cards.size ? '可以在“管理卡片”的“已删除”里恢复。' : '老师布置之后，这里会出现「阅读词」，点进去就能背。'}</div></div>`
     : `<div class="card deck" id="deck"><div class="ic">📖</div><div class="sp"><div class="nm">阅读词</div>
         <div class="stats"><span>待复习 <span class="n-rev">${k.r + k.l}</span></span><span>今天可学新词 <span class="n-new">${k.n}</span></span><span class="sub">已布置 ${st.total} 词</span></div></div>
         <button class="pri">进入</button></div>
-      <div class="row" style="justify-content:flex-end"><button class="ghost" id="mywords">📋 我的词（查看 / 不再背诵 / 恢复）</button></div>`;
-  app.innerHTML = `<div class="wrap"><h1>你好，${esc(S.learner.name)}</h1>${body}
+      <div class="row" style="justify-content:flex-end"><button class="ghost" id="mywords">🗂 管理卡片（选今天学哪些）</button></div>`;
+  app.innerHTML = `<div class="wrap"><h1>你好，${esc(S.learner.name)}</h1>${body}${!all.length && S.cards.size ? `<p><button id="mywords">🗂 管理卡片（含已删除）</button></p>` : ''}
     ${MOCK ? `<p class="faint">离线演示：进度只存在这台设备上。<a href="#" id="rs">清空演示数据</a></p>` : ''}</div>`;
   $('#deck')?.addEventListener('click', () => go('pick'));
   $('#mywords')?.addEventListener('click', () => go('words'));
@@ -201,18 +203,19 @@ function renderPick() {
     const k = qn(queueFor(sel)), n = k.n + k.l + k.r;
     return `<button class="pri study-btn" ${attr}="${esc(id)}" aria-label="背诵 ${esc(label)}" ${n ? '' : 'disabled'} title="${n ? `只背这一项：新词 ${k.n} · 学习中 ${k.l} · 复习 ${k.r}` : '这一项今天暂无可背的词，或已达到老师设定的每日上限'}">背诵</button>`;
   };
-  const blocks = S.papers.map((p) => {
+  const blocks = visiblePapers().map((p) => {
     const us = p.sections.map((s) => p.paper_id + '|' + s.id);
     return `<div class="paper"><div class="paper-h"><span class="name">${esc(p.name)}</span>${studyButton('data-study-paper', p.paper_id, p.name, us)}</div>
       ${p.sections.map((s) => { const u = p.paper_id + '|' + s.id, o = stats([u]), qq = qn(queueFor([u]));
         return `<div class="sec"><span class="name"><b>${esc(secTitle(s))}</b>${s.piece ? ` <span class="faint hide-s">${esc(s.board)}</span>` : ''}${s.level ? ` <span class="chip lv">${esc(s.level)}</span>` : ''}</span>
           <span class="cnt">${o.total} 词 · <span class="n-new">新 ${o.new}</span> · <span class="n-rev">待复习 ${qq.r + qq.l}</span>${o.sus ? ` · <span class="n-sus">不再背 ${o.sus}</span>` : ''}</span>${studyButton('data-study-unit', u, p.name + ' · ' + secTitle(s), [u])}</div>`; }).join('')}</div>`;
   }).join('');
-  app.innerHTML = `<div class="wrap"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">阅读词</h1></div>
+  app.innerHTML = `<div class="wrap"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">阅读词</h1><span class="sp"></span><button class="ghost" id="manage-cards">管理卡片</button></div>
     <div class="card"><h2>今天想背哪一份？</h2><div class="faint" style="margin:-4px 0 12px">想背哪一份，就点它后面的“背诵”。每次只背这一份，随时可以返回。</div>
       ${blocks}
       <div class="faint">每天最多学 ${S.learner.new_per_day} 个新词，今天已学 ${cn.newDone} 个；按自己的时间安排就好。</div></div></div>`;
   $('#back').onclick = () => go('home');
+  $('#manage-cards').onclick = () => go('words');
   app.querySelectorAll('[data-study-unit]').forEach((el) => el.onclick = () => {
     const u = el.dataset.studyUnit, p = S.papers.find((p) => p.sections.some((s) => p.paper_id + '|' + s.id === u));
     const s = p?.sections.find((s) => p.paper_id + '|' + s.id === u);
@@ -290,7 +293,7 @@ function renderStudy(q) {
       box.querySelector('#original-face')?.addEventListener('change', (event) => { ss.originalFace = +event.target.value; originalAnswers = {}; renderStudy(); });
     }
     $('#say')?.addEventListener('click', () => say(c));
-    $('#sus').onclick = suspendCurrent;
+    $('#sus').onclick = suspendCurrent; $('#sus').disabled = S.learner.self_manage !== true;
     $('#show')?.addEventListener('click', showAnswer);
     app.querySelectorAll('[data-e]').forEach((b) => b.onclick = () => onAnswer(+b.dataset.e));
   }
@@ -342,35 +345,17 @@ function doUndo() {
 
 // ---------- 我的词 ----------
 function renderWords() {
-  const f = S.wf, q = f.q.trim().toLowerCase(), all = units();
-  if (f.unit !== 'all' && !all.includes(f.unit)) f.unit = 'all';
-  let list = [...S.cards.values()].sort((a, b) => (a.paper === b.paper ? a.ord - b.ord : a.paper < b.paper ? -1 : 1));
-  if (f.unit !== 'all') list = list.filter((c) => unitsOf(c).includes(f.unit));
-  if (f.st !== 'all') list = list.filter((c) => kind(c) === f.st);
-  if (q) list = list.filter((c) => c.d.w.toLowerCase().includes(q) || (c.d.mean || '').includes(q));
-  const stName = { new: '新词', learn: '学习中', rev: '复习中', sus: '不再背诵' }, td = S.today;
-  const dueTxt = (c) => (c.suspended || c.type === 0 ? '—' : c.queue === 1 ? '今天' : c.due <= td ? '今天' : `${c.due - td} 天后`);
-  const shown = list.slice(0, 300);
-  app.innerHTML = `<div class="wrap wide"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">我的词</h1><span class="sp"></span>
-      <button id="undo" ${S.undo.length ? '' : 'disabled'}>↶ 撤销${S.undo.length ? `（还能撤 ${S.undo.length} 步）` : ''}</button></div>${undoBar()}
-    <div class="card"><div class="filters">
-      <select id="fu"><option value="all">全部试卷和篇章</option>${S.papers.map((p) => `<optgroup label="${esc(p.name)}">${p.sections.map((s) => { const u = p.paper_id + '|' + s.id; return `<option value="${esc(u)}" ${f.unit === u ? 'selected' : ''}>${esc(secTitle(s))} · ${esc(s.level)}</option>`; }).join('')}</optgroup>`).join('')}</select>
-      <div class="seg">${[['all', '全部'], ['new', '新词'], ['learn', '学习中'], ['rev', '复习中'], ['sus', '不再背诵']].map(([v, t]) => `<button data-st="${v}" class="${f.st === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-      <input type="text" id="fq" placeholder="搜单词或中文" value="${esc(f.q)}" style="flex:1;min-width:140px"></div>
-      <div class="faint" style="margin-bottom:6px">共 ${list.length} 词${list.length > 300 ? '（先显示前 300 个，可以用上面的筛选缩小范围）' : ''}</div>
-      <div class="tbl-wrap"><table><thead><tr><th>单词</th><th>意思</th><th class="hide-s">篇</th><th>状态</th><th class="hide-s">下次</th><th></th></tr></thead><tbody>
-      ${shown.map((c) => `<tr class="${c.suspended ? 'is-sus' : ''}"><td><b>${esc(c.d.w)}</b> <span class="faint">${esc(c.d.pos)}</span></td><td>${esc(c.d.mean)}</td>
-        <td class="hide-s">${esc(secTitle(secOf(c.paper, c.sec)))}</td><td class="n-${kind(c)}">${stName[kind(c)]}</td><td class="hide-s">${dueTxt(c)}</td>
-        <td style="text-align:right">${c.suspended ? `<button data-un="${esc(c.key)}">恢复背诵</button>` : `<button class="warn" data-su="${esc(c.key)}">不再背诵</button>`}</td></tr>`).join('')}
-      </tbody></table></div>${list.length ? '' : '<div class="empty">没有符合条件的词</div>'}</div>
-    <p class="faint">“不再背诵”的词不会再出现在背诵里；点“恢复背诵”就回来了。最近 3 步操作都可以撤销。</p></div>`;
-  $('#back').onclick = () => go('home');
-  $('#undo').onclick = doUndo;
-  $('#fu').onchange = (e) => { f.unit = e.target.value; renderWords(); };
-  app.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => { f.st = b.dataset.st; renderWords(); });
-  const fq = $('#fq'); fq.oninput = () => { f.q = fq.value; const p = fq.selectionStart; renderWords(); const n = $('#fq'); n.focus(); n.setSelectionRange(p, p); };
-  app.querySelectorAll('[data-su]').forEach((b) => b.onclick = () => { const c = S.cards.get(b.dataset.su); setSus(c, true); renderWords(); toast(`「${c.d.w}」以后不再背诵`, true); });
-  app.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => { const c = S.cards.get(b.dataset.un); setSus(c, false); renderWords(); toast(`「${c.d.w}」已恢复背诵`, true); });
+  S.browser?.destroy();
+  app.innerHTML = `<div class="wrap wide"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">管理卡片</h1></div>
+    <p class="sub">暂停的卡仍能在这里查看；“删除”放进本人的“已删除”，恢复后保留原学习进度。总词库和其他学生不受影响。</p>
+    <div id="teaching-browser"></div></div>`;
+  $('#back').onclick = () => go('pick');
+  if (!S.managed) { $('#teaching-browser').textContent = '卡片管理接口尚未接入，请老师运行13号SQL后刷新。'; return; }
+  S.browser = mountTeachingBrowser($('#teaching-browser'), {
+    state: { learner: S.learner, papers: S.papers, cards: S.cards, today: S.today, review: S.review }, api: S.api,
+    beforeManage: async () => { await flush(); if (S.pending.length) throw new Error('学习记录正在同步，请稍后重试。'); },
+    onChange: () => { S.undo = []; },
+  });
 }
 
 // ---------- 提示 ----------
