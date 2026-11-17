@@ -16,18 +16,25 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
     if (r.mapManifest || r.notes.some((n) => n.tags.includes('MAP协议::v1') && n.tags.some((t) => t.startsWith('MAP科目::')))) {
       return await prepareMapImport(r, filename, file, workDir + '/media', readTeachingNote);
     }
-    if (!meta.courses?.length || meta.courses.some((c) => !COURSES.includes(c))) throw new Error('请选择有效的适用课程');
+    const grammar = meta.use === '语法词';
+    meta.courses ||= [];
+    if ((!grammar && !meta.courses.length) || meta.courses.some((c) => !COURSES.includes(c))) throw new Error('请选择有效的适用课程');
     if (!SOURCE_TYPES.includes(meta.sourceType)) throw new Error('请选择来源类型');
-    if (meta.use !== '阅读词') throw new Error('本次先接入阅读词；写作词、听力词的训练方式尚未开通，请保留正确用途，待对应功能接入后再导入');
+    if (!['阅读词', '语法词'].includes(meta.use)) throw new Error('当前接入阅读词和语法词；写作词、听力词的训练方式尚未开通，请保留正确用途，待对应功能接入后再导入');
     if (!r.cards.length || !r.notes.length) throw new Error('包内没有卡片');
     if (r.revlog.length || r.cards.some((c) => c.sched.reps || c.sched.type || c.sched.queue > 0)) throw new Error('请导出不含学习进度的新词库包，不能把个人答题记录导入教学词库');
     const paperId = 'teach:' + hash(meta.material.normalize('NFKC').toLowerCase().replace(/[\s_-]+/g, '') + '|' + (meta.edition || '') + '|' + meta.use).slice(0, 24);
     const sectionId = 'part:' + hash(meta.locator).slice(0, 20);
     const errors = [], cards = [], media = new Set(), guids = new Set(), warnings = new Set();
     const activeNotes = new Set(r.cards.map((c) => c.nid));
+    if (grammar) {
+      const topics = [...new Set(r.notes.filter((n) => activeNotes.has(n.id)).flatMap((n) => n.tags.filter((t) => t.startsWith('专题::')).map((t) => t.slice(4))))];
+      if (topics.length !== 1 || !topics[0].trim()) throw new Error('一个语法词包必须有一个明确且一致的专题标签，不会根据文件名猜测');
+      meta.topic = topics[0];
+    }
     for (const n of r.notes.filter((x) => activeNotes.has(x.id))) {
       const model = r.models.get(n.mid);
-      const { sound, ...d } = readTeachingNote(n, model);
+      const { sound, ...d } = readTeachingNote(n, model, { use: meta.use });
       d.presentation = makePresentation(n, model, r.cards.filter((c) => c.nid === n.id), r.mediaMap, r.decks);
       d.presentation.media.forEach((name) => media.add(name));
       const result = checkTags(n.tags, meta, !!options.supplement);
@@ -54,7 +61,7 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
       file: filename, fingerprint: hash(fs.readFileSync(file)), cards, media: [...media], warnings: [...warnings],
       paper: { paper_id: paperId, bank: meta.use, name: meta.material.replace(/-/g, ' '), sort: 0,
         sections: [{ id: sectionId, label: [meta.locator, meta.title].filter(Boolean).join(' · '), board: meta.locator, piece: meta.title, level: '', tiers, sort: 0, count: cards.length, tags: [meta.material.replace(/-/g, ' '), meta.locator] }],
-        source: { schema: 1, courses: meta.courses, sourceType: meta.sourceType, edition: String(meta.edition || '').trim(), materialSlug: meta.material, filename, batch: meta.batch, version: meta.version, tiers, tagsSupplemented: !!options.supplement } },
+        source: { schema: 1, courses: meta.courses, sourceType: meta.sourceType, edition: String(meta.edition || '').trim(), materialSlug: meta.material, filename, batch: meta.batch, version: meta.version, tiers, tagsSupplemented: !!options.supplement, ...(grammar ? { grammar_schema: 'grammar-bank-v1', topic: meta.topic } : {}) } },
     };
   } finally { r.cleanup(); }
 }
