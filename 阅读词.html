@@ -38,6 +38,10 @@
   .paper{border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
   .paper-h{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--acc-weak);font-weight:700}
   .paper-h .name,.sec .name{flex:1;min-width:0;overflow-wrap:anywhere}
+  .paper-toggle{display:flex;align-items:center;gap:10px;flex:1;min-width:0;min-height:40px;padding:6px 0;border:0;background:transparent;text-align:left;font-weight:inherit}
+  .paper-toggle:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .paper-arrow{flex:none;width:8px;height:8px;margin:0 3px 0 2px;border:solid var(--acc);border-width:0 2px 2px 0;transform:rotate(-45deg)}
+  .paper-toggle[aria-expanded="true"] .paper-arrow{transform:rotate(45deg)}
   .sec{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px 11px 40px;border-top:1px solid var(--line)}
   .sec .cnt{margin-left:auto;font-size:13px;color:var(--sub);white-space:nowrap}
   .study-btn{flex:none;min-height:40px;white-space:nowrap}
@@ -118,7 +122,7 @@ let code = '';
 
 // ---------- 状态 ----------
 const S = { api: null, learner: null, skew: 0, today: 0, papers: [], cards: new Map(), log: [], pending: [], flushing: false,
-  managed: false, review: [], browser: null, view: 'home', sess: null, undo: [], wf: { unit: 'all', st: 'all', q: '' } };
+  managed: false, review: [], browser: null, view: 'home', sess: null, undo: [], expandedPapers: new Set(), wf: { unit: 'all', st: 'all', q: '' } };
 const UNDO_MAX = 3;
 const now = () => Date.now() + S.skew;
 const unitOf = (c) => c.paper + '|' + c.sec;
@@ -199,31 +203,56 @@ function renderHome() {
 
 function renderPick() {
   const cn = todayCounts();
-  const studyButton = (attr, id, label, sel) => {
-    const k = qn(queueFor(sel)), n = k.n + k.l + k.r;
+  const studyButton = (attr, id, label, k) => {
+    const n = k.n + k.l + k.r;
     return `<button class="pri study-btn" ${attr}="${esc(id)}" aria-label="背诵 ${esc(label)}" ${n ? '' : 'disabled'} title="${n ? `只背这一项：新词 ${k.n} · 学习中 ${k.l} · 复习 ${k.r}` : '这一项今天暂无可背的词，或已达到老师设定的每日上限'}">背诵</button>`;
   };
-  const blocks = visiblePapers().map((p) => {
-    const us = p.sections.map((s) => p.paper_id + '|' + s.id);
-    return `<div class="paper"><div class="paper-h"><span class="name">${esc(p.name)}</span>${studyButton('data-study-paper', p.paper_id, p.name, us)}</div>
-      ${p.sections.map((s) => { const u = p.paper_id + '|' + s.id, o = stats([u]), qq = qn(queueFor([u]));
-        return `<div class="sec"><span class="name"><b>${esc(secTitle(s))}</b>${s.piece ? ` <span class="faint hide-s">${esc(s.board)}</span>` : ''}${s.level ? ` <span class="chip lv">${esc(s.level)}</span>` : ''}</span>
-          <span class="cnt">${o.total} 词 · <span class="n-new">新 ${o.new}</span> · <span class="n-rev">待复习 ${qq.r + qq.l}</span>${o.sus ? ` · <span class="n-sus">不再背 ${o.sus}</span>` : ''}</span>${studyButton('data-study-unit', u, p.name + ' · ' + secTitle(s), [u])}</div>`; }).join('')}</div>`;
+  const paperUnits = (paper) => paper.sections.map((section) => paper.paper_id + '|' + section.id);
+  const renderSections = (paper) => paper.sections.map((section) => {
+    const unit = paper.paper_id + '|' + section.id;
+    const counts = stats([unit]), available = qn(queueFor([unit])), title = secTitle(section);
+    return `<div class="sec"><span class="name"><b>${esc(title)}</b>${section.piece ? ` <span class="faint hide-s">${esc(section.board)}</span>` : ''}${section.level ? ` <span class="chip lv">${esc(section.level)}</span>` : ''}</span>
+      <span class="cnt">${counts.total} 词 · <span class="n-new">新 ${counts.new}</span> · <span class="n-rev">待复习 ${available.r + available.l}</span>${counts.sus ? ` · <span class="n-sus">不再背 ${counts.sus}</span>` : ''}</span>${studyButton('data-study-unit', unit, paper.name + ' · ' + title, available)}</div>`;
+  }).join('');
+  const papers = visiblePapers();
+  const blocks = papers.map((paper, index) => {
+    const expanded = S.expandedPapers.has(paper.paper_id);
+    const panelId = `paper-sections-${index}`;
+    return `<div class="paper"><div class="paper-h">
+      <button type="button" class="paper-toggle" aria-expanded="${expanded}" aria-controls="${panelId}"><span class="paper-arrow" aria-hidden="true"></span><span class="name">${esc(paper.name)}</span></button>
+      ${studyButton('data-study-paper', paper.paper_id, paper.name, qn(queueFor(paperUnits(paper))))}</div>
+      <div id="${panelId}"${expanded ? '' : ' hidden'}>${expanded ? renderSections(paper) : ''}</div></div>`;
   }).join('');
   app.innerHTML = `<div class="wrap"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">阅读词</h1><span class="sp"></span><button class="ghost" id="manage-cards">管理卡片</button></div>
-    <div class="card"><h2>今天想背哪一份？</h2><div class="faint" style="margin:-4px 0 12px">想背哪一份，就点它后面的“背诵”。每次只背这一份，随时可以返回。</div>
+    <div class="card"><h2>今天想背哪一份？</h2><div class="faint" style="margin:-4px 0 12px">点材料名称展开或收起篇章和练习，点右侧“背诵”开始。</div>
       ${blocks}
       <div class="faint">每天最多学 ${S.learner.new_per_day} 个新词，今天已学 ${cn.newDone} 个；按自己的时间安排就好。</div></div></div>`;
   $('#back').onclick = () => go('home');
   $('#manage-cards').onclick = () => go('words');
-  app.querySelectorAll('[data-study-unit]').forEach((el) => el.onclick = () => {
-    const u = el.dataset.studyUnit, p = S.papers.find((p) => p.sections.some((s) => p.paper_id + '|' + s.id === u));
-    const s = p?.sections.find((s) => p.paper_id + '|' + s.id === u);
-    startStudy([u], [p?.name, secTitle(s)].filter(Boolean).join(' · '));
-  });
-  app.querySelectorAll('[data-study-paper]').forEach((el) => el.onclick = () => {
-    const p = paperOf(el.dataset.studyPaper);
-    if (p) startStudy(p.sections.map((s) => p.paper_id + '|' + s.id), p.name);
+  app.querySelectorAll('.paper').forEach((block, index) => {
+    const paper = papers[index];
+    const toggle = block.querySelector('.paper-toggle');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+    toggle.onclick = () => {
+      if (panel.hidden) {
+        panel.innerHTML = renderSections(paper);
+        panel.hidden = false;
+        S.expandedPapers.add(paper.paper_id);
+      } else {
+        panel.hidden = true;
+        panel.replaceChildren();
+        S.expandedPapers.delete(paper.paper_id);
+      }
+      toggle.setAttribute('aria-expanded', String(!panel.hidden));
+    };
+    block.querySelector('[data-study-paper]').onclick = () => startStudy(paperUnits(paper), paper.name);
+    panel.onclick = (event) => {
+      const button = event.target.closest('[data-study-unit]');
+      if (!button || button.disabled) return;
+      const unit = button.dataset.studyUnit;
+      const section = paper.sections.find((section) => paper.paper_id + '|' + section.id === unit);
+      startStudy([unit], [paper.name, secTitle(section)].filter(Boolean).join(' · '));
+    };
   });
 }
 
