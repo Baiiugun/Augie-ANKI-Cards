@@ -287,9 +287,10 @@ function undoBar() {
 function renderStudy(q) {
   disposeOriginal(); disposeOriginal = () => {};
   const ss = S.sess; q ||= queueFor(ss.sel); const k = qn(q), c = ss.cur, kd = c ? (c.queue === 0 ? 'n' : c.queue === 2 ? 'r' : 'l') : '';
+  const canSuspend = S.learner.self_manage === true;
   const top = `<div class="topbar"><button class="ghost" id="back">← 阅读词</button>
       <div class="counts" title="蓝=新词 红=学习中 绿=复习"><span class="n-new ${kd === 'n' ? 'cur' : ''}">${k.n}</span><span class="n-learn ${kd === 'l' ? 'cur' : ''}">${k.l}</span><span class="n-rev ${kd === 'r' ? 'cur' : ''}">${k.r}</span></div>
-      <span class="sp"></span>${c ? '<button class="warn" id="sus" title="这个词以后不再出现；可以撤销，也可以在「我的词」里恢复">🚫 不再背诵</button>' : ''}
+      <span class="sp"></span>${c ? `<button class="warn" id="sus" ${canSuspend ? 'aria-keyshortcuts="6" title="按 6 暂停这个词，可按 Z 撤销，也可在「管理卡片」里恢复"' : 'disabled title="老师已关闭卡片自主管理"'}>🚫 不再背诵${canSuspend ? '<span class="hide-s" aria-hidden="true">（6）</span>' : ''}</button>` : ''}
       <button id="undo" ${S.undo.length ? '' : 'disabled'} title="快捷键 Z">↶ 撤销${S.undo.length ? `（还能撤 ${S.undo.length} 步）` : ''}</button></div><div class="study-scope">正在背：${esc(ss.label)}</div>${undoBar()}`;
   if (!c) {
     const nxt = [...S.cards.values()].filter((x) => !x.suspended && x.queue === 1 && unitsOf(x).some((u) => ss.sel.includes(u))).sort((a, b) => a.due - b.due)[0];
@@ -311,7 +312,7 @@ function renderStudy(q) {
       foot = `<div class="grade">${[1, 2, 3, 4].map((e) => `<button class="g${e}" data-e="${e}">${lab[e - 1]}<small>${formatDelay(pv[e - 1])}</small></button>`).join('')}</div>`;
     } else foot = '<button class="pri showbtn" id="show">显示答案</button>';
     app.innerHTML = `<div class="wrap">${top}<div class="card flash">${front}${back}</div>${foot}
-      <div class="faint hide-s" style="margin-top:10px;text-align:center">键盘：空格 显示答案 · 1–4 作答 · Z 撤销</div></div>`;
+      <div class="faint hide-s" style="margin-top:10px;text-align:center">键盘：空格 显示答案 · 1–4 作答${canSuspend ? ' · 6 不再背诵' : ''} · Z 撤销</div></div>`;
     if (d.presentation) {
       if (originalKey !== c.key) { originalKey = c.key; originalAnswers = {}; }
       const box = app.querySelector('.card.flash');
@@ -322,7 +323,7 @@ function renderStudy(q) {
       box.querySelector('#original-face')?.addEventListener('change', (event) => { ss.originalFace = +event.target.value; originalAnswers = {}; renderStudy(); });
     }
     $('#say')?.addEventListener('click', () => say(c));
-    $('#sus').onclick = suspendCurrent; $('#sus').disabled = S.learner.self_manage !== true;
+    $('#sus').onclick = suspendCurrent;
     $('#show')?.addEventListener('click', showAnswer);
     app.querySelectorAll('[data-e]').forEach((b) => b.onclick = () => onAnswer(+b.dataset.e));
   }
@@ -423,15 +424,19 @@ function setSync(bad) {
 }
 window.addEventListener('beforeunload', (e) => { if (S.pending.length) { e.preventDefault(); e.returnValue = ''; } });
 
-// ---------- 键盘（同 Anki：空格/回车 显示答案或“良好”，1-4 作答，Z 撤销） ----------
+// ---------- 键盘：空格/回车 显示答案或“良好”，1–4 作答，5 留空，6 不再背诵，Z 撤销 ----------
 function studyKey(e) {
-  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.defaultPrevented || e.isComposing || e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { if (S.view === 'study' || S.view === 'words') { e.preventDefault(); doUndo(); } return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'z' || e.key === 'Z') { if (S.view === 'study' || S.view === 'words') { e.preventDefault(); doUndo(); } return; }
   const ss = S.sess; if (S.view !== 'study' || !ss || !ss.cur) return;
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (ss.showing === 'q') showAnswer(); else onAnswer(3); }
   else if (['1', '2', '3', '4'].includes(e.key) && ss.showing === 'a') onAnswer(+e.key);
+  else if (e.key === '6' && !e.shiftKey && !e.repeat) {
+    const button = $('#sus:enabled');
+    if (button) { e.preventDefault(); button.click(); }
+  }
 }
 document.addEventListener('keydown', studyKey);
 
