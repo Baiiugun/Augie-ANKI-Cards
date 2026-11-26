@@ -34,6 +34,7 @@
   .deck{display:flex;align-items:center;gap:16px;cursor:pointer;padding:20px;border-radius:16px}
   .deck .ic{width:54px;height:54px;border-radius:14px;background:var(--acc-weak);display:grid;place-items:center;font-size:26px;flex:none}
   .deck .nm{font-size:20px;font-weight:700}
+  [data-topic-row]:has(.study-btn:enabled){cursor:pointer}
   .stats{display:flex;gap:18px;flex-wrap:wrap;margin-top:4px;font-size:14px}
   .paper{border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
   .paper-h{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--acc-weak);font-weight:700}
@@ -134,6 +135,33 @@ const decks = [{ name: '阅读词', icon: '📖' }, { name: '写作词', icon: '
 const deckOfPaper = (paper) => paper.bank === '写作词' ? '写作词' : '阅读词';
 const papersInDeck = (papers, deck) => papers.filter((paper) => deckOfPaper(paper) === deck);
 const units = (papers) => papers.flatMap((p) => p.sections.map((s) => p.paper_id + '|' + s.id));
+const writingTopicUnit = 'teach:c0074d278da26ae0fe342a4c|part:af853bdcc4a0eb32ee22';
+// Exact topic tags and titles from the original APKG, joined to the verified upload by GUID.
+const writingTopics = [
+  ["01", "第二外语", "81903da078d8 6932fc6d3e7f 7240c60a3a1e 9b31f76aac6a b1e07a63d8b8 abbfcc5beb52 b89781c45ac6"],
+  ["02", "课后活动", "6e51ebd77b8f d47c36a09817 4941f786d237 4b9b4ff32c0e d93ab80269fa 10af00488f28 e5422134c872 a5d23b5b371b a53b5c84477a"],
+  ["03", "每天布置作业", "f7c09fdf8c42 1c80af99e18d 132e7217efdb c3273f750e5f fc47d46c302e b7cacf7e32b7 95ba42c8e1a1"],
+  ["04", "穿校服", "f98682442ed9 066f8650ad3f 06afdb19c28a 3be93b696793 a4452c56a6f0 f79b0e0d67c7 43b5567d1662"],
+  ["05", "AI 与工作", "eb2279ff10b3 817d38ab0df2 5b568a450fbc a72c366a3cc8 37ab548475ad 78eeb628e76f 681b1a924f75"],
+  ["06", "科技助学", "34be486174ae 4fd65b12e26e db6ab6e04dd5 19c0949bb4cb 151beac75b99 08637a1a3111 9963c01a92f4"],
+  ["07", "有机食物", "068ad4db9bfe 204c160af4e8 d4e8f62b4d7a b045a1058ec7 ff3e7f4fb20c de64bbdea07a fced0ad91cec"],
+  ["08", "健康饮食", "7512d19c62d0 4cc9f3699d3a 62d9666535b4 9ed1a47894c8 569f09336f3f 2f3aab03f1a0 72034acec563"],
+  ["09", "公共交通", "2c4810320f81 b4ca5b0ed62f 037f29a4ebba 9eaf093a9726 e86b06f858ee a6860b263e6c 36c9e053c525 e8a6817ff60e"],
+  ["10", "企业与环境", "d58eb977fa44 c12f888f61cc cdcae3166316 99d9fb894102 e43640b23ee7 c843da80159d e80a40da9639 21916bc8e714"],
+  ["11", "日常生活中的艺术", "5622a60e79c6 2ee2c7267255 5e383e73b6fd c73666c14912 8e3511011db8 2361328f6780 aaf63a57e7b8"]
+];
+const writingTopicIds = new Map(writingTopics.flatMap(([id, , fingerprints]) => fingerprints.split(' ').map((value) => [value, id])));
+function writingTopicGroups() {
+  const groups = writingTopics.map(([id, title]) => ({ id, title: '话题 ' + id + ' · ' + title, keys: new Set() }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const other = { id: 'other', title: '其他卡片', keys: new Set() };
+  for (const card of S.cards.values()) {
+    if (card.deleted || unitOf(card) !== writingTopicUnit) continue;
+    const group = byId.get(writingTopicIds.get(card.key.slice(-12))) || other;
+    group.keys.add(card.key);
+  }
+  return [...groups, other].filter((group) => group.keys.size);
+}
 const secTitle = (s) => s ? (s.label || [s.board, s.piece].filter(Boolean).join(' · ')) : '';
 const srcLine = (c) => { const p = paperOf(c.paper); return [p?.name || '', ...(c.d.source_sections || [c.sec]).map((id) => secTitle(secOf(c.paper, id)))].filter(Boolean).join(' · '); };
 const kind = (c) => (c.suspended ? 'sus' : c.type === 0 ? 'new' : c.type === 2 && c.queue === 2 ? 'rev' : 'learn');
@@ -171,15 +199,21 @@ function showCodeInput() {
 // ---------- 今天的计数和队列（每日上限在教学词库间共用） ----------
 function todayCounts() { return { newDone: new Set(S.log.filter((l) => l.prev_type === 0).map((l) => l.key)).size, revDone: S.log.filter((l) => l.type === 1).length }; }
 const limits = () => ({ newPerDay: S.learner.new_per_day, revPerDay: S.learner.rev_per_day });
-function queueFor(sel) {
-  const set = sel ? new Set(sel) : null;
-  const list = [...S.cards.values()].filter((c) => !c.deleted && (!set || unitsOf(c).some((u) => set.has(u))));
+const matchesScope = (card, sections, keys) =>
+  (!keys || keys.has(card.key)) && (!sections || unitsOf(card).some((unit) => sections.has(unit)));
+function queueFor(sel, keys) {
+  const sections = sel ? new Set(sel) : null;
+  const list = [...S.cards.values()].filter((card) => !card.deleted && matchesScope(card, sections, keys));
   return buildQueue(list, now(), todayCounts(), limits());
 }
 const qn = (q) => ({ n: q.news.length, l: q.learnDue.length + q.interday.length + q.learnAhead.length, r: q.reviews.length });
-function stats(sel) {
-  const set = sel ? new Set(sel) : null, o = { total: 0, new: 0, learn: 0, rev: 0, sus: 0 };
-  for (const c of S.cards.values()) { if (c.deleted) continue; if (set && !unitsOf(c).some((u) => set.has(u))) continue; o.total++; o[kind(c)]++; }
+function stats(sel, keys) {
+  const sections = sel ? new Set(sel) : null, o = { total: 0, new: 0, learn: 0, rev: 0, sus: 0 };
+  for (const card of S.cards.values()) {
+    if (card.deleted || !matchesScope(card, sections, keys)) continue;
+    o.total++;
+    o[kind(card)]++;
+  }
   return o;
 }
 
@@ -193,6 +227,7 @@ function go(v) {
   if (S.browser) { S.browser.destroy(); S.browser = null; }
   S.view = v;
   if (v !== 'study') {
+    if (S.sess?.keys && $('#tu')) $('#toast-root').replaceChildren();
     disposeOriginal();
     disposeOriginal = () => {};
     stopAudio();
@@ -224,28 +259,35 @@ function renderHome() {
 
 function renderPick() {
   const cn = todayCounts();
-  const studyButton = (attr, id, label, k) => {
+  const studyButton = (attr, id, label, k, text = '背诵') => {
     const n = k.n + k.l + k.r;
-    return `<button class="pri study-btn" ${attr}="${esc(id)}" aria-label="背诵 ${esc(label)}" ${n ? '' : 'disabled'} title="${n ? `只背这一项：新词 ${k.n} · 学习中 ${k.l} · 复习 ${k.r}` : '这一项今天暂无可背的词，或已达到老师设定的每日上限'}">背诵</button>`;
+    return `<button class="pri study-btn" ${attr}="${esc(id)}" aria-label="背诵 ${esc(label)}" ${n ? '' : 'disabled'} title="${n ? `只背这一项：新词 ${k.n} · 学习中 ${k.l} · 复习 ${k.r}` : '这一项今天暂无可背的词，或已达到老师设定的每日上限'}">${text}</button>`;
   };
   const paperUnits = (paper) => paper.sections.map((section) => paper.paper_id + '|' + section.id);
-  const renderSections = (paper) => paper.sections.map((section) => {
+  const groups = new Map(writingTopicGroups().map((group) => [group.id, group]));
+  const renderSection = (paper, section, topic) => {
     const unit = paper.paper_id + '|' + section.id;
-    const counts = stats([unit]), available = qn(queueFor([unit])), title = secTitle(section);
-    return `<div class="sec"><span class="name"><b>${esc(title)}</b>${section.piece ? ` <span class="faint hide-s">${esc(section.board)}</span>` : ''}${section.level ? ` <span class="chip lv">${esc(section.level)}</span>` : ''}</span>
-      <span class="cnt">${counts.total} 词 · <span class="n-new">新 ${counts.new}</span> · <span class="n-rev">待复习 ${available.r + available.l}</span>${counts.sus ? ` · <span class="n-sus">不再背 ${counts.sus}</span>` : ''}</span>${studyButton('data-study-unit', unit, paper.name + ' · ' + title, available)}</div>`;
-  }).join('');
+    const counts = stats([unit], topic?.keys), available = qn(queueFor([unit], topic?.keys));
+    const title = topic?.title || secTitle(section);
+    const action = studyButton(topic ? 'data-study-topic' : 'data-study-unit', topic?.id || unit, paper.name + ' · ' + title, available);
+    return `<div class="sec"${topic ? ' data-topic-row' : ''}><span class="name"><b>${esc(title)}</b>${!topic && section.piece ? ` <span class="faint hide-s">${esc(section.board)}</span>` : ''}${!topic && section.level ? ` <span class="chip lv">${esc(section.level)}</span>` : ''}</span>
+      <span class="cnt">${counts.total} 词 · <span class="n-new">新 ${counts.new}</span> · <span class="n-rev">待复习 ${available.r + available.l}</span>${counts.sus ? ` · <span class="n-sus">不再背 ${counts.sus}</span>` : ''}</span>${action}</div>`;
+  };
+  const renderSections = (paper) => paper.sections.map((section) =>
+    paper.paper_id + '|' + section.id === writingTopicUnit
+      ? [...groups.values()].map((topic) => renderSection(paper, section, topic)).join('')
+      : renderSection(paper, section)).join('');
   const papers = papersInDeck(visiblePapers(), S.deck);
   const blocks = papers.map((paper, index) => {
     const expanded = S.expandedPapers.has(paper.paper_id);
     const panelId = `paper-sections-${index}`;
     return `<div class="paper"><div class="paper-h">
       <button type="button" class="paper-toggle" aria-expanded="${expanded}" aria-controls="${panelId}"><span class="paper-arrow" aria-hidden="true"></span><span class="name">${esc(paper.name)}</span></button>
-      ${studyButton('data-study-paper', paper.paper_id, paper.name, qn(queueFor(paperUnits(paper))))}</div>
+      ${studyButton('data-study-paper', paper.paper_id, paper.name, qn(queueFor(paperUnits(paper))), paperUnits(paper).includes(writingTopicUnit) ? '背诵整套' : '背诵')}</div>
       <div id="${panelId}"${expanded ? '' : ' hidden'}>${expanded ? renderSections(paper) : ''}</div></div>`;
   }).join('');
   app.innerHTML = `<div class="wrap"><div class="topbar"><button class="ghost" id="back">← 返回</button><h1 style="margin:0">${S.deck}</h1><span class="sp"></span><button class="ghost" id="manage-cards">管理卡片</button></div>
-    <div class="card"><h2>今天想背哪一份？</h2><div class="faint" style="margin:-4px 0 12px">点材料名称展开或收起篇章和练习，点右侧“背诵”开始。</div>
+    <div class="card"><h2>今天想背哪一份？</h2><div class="faint" style="margin:-4px 0 12px">点材料名称展开，按篇章或话题选择今天要背的内容。</div>
       ${blocks || '<p class="sub">这个词库目前没有可见的卡片。</p>'}
       <div class="faint">每天最多学 ${S.learner.new_per_day} 个新词，今天已学 ${cn.newDone} 个；按自己的时间安排就好。</div></div></div>`;
   $('#back').onclick = () => go('home');
@@ -268,10 +310,16 @@ function renderPick() {
     };
     block.querySelector('[data-study-paper]').onclick = () => startStudy(paperUnits(paper), paper.name);
     panel.onclick = (event) => {
-      const button = event.target.closest('[data-study-unit]');
+      const button = event.target.closest('[data-study-unit], [data-study-topic]') ||
+        event.target.closest('[data-topic-row]')?.querySelector('[data-study-topic]');
       if (!button || button.disabled) return;
+      if (button.dataset.studyTopic) {
+        const group = groups.get(button.dataset.studyTopic);
+        if (group) startStudy([writingTopicUnit], paper.name + ' · ' + group.title, group.keys);
+        return;
+      }
       const unit = button.dataset.studyUnit;
-      const section = paper.sections.find((section) => paper.paper_id + '|' + section.id === unit);
+      const section = paper.sections.find((item) => paper.paper_id + '|' + item.id === unit);
       startStudy([unit], [paper.name, secTitle(section)].filter(Boolean).join(' · '));
     };
   });
@@ -288,33 +336,36 @@ function say(c) {
   }
   try { const u = new SpeechSynthesisUtterance(c.d.w); u.lang = 'en-GB'; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) { /* 忽略 */ }
 }
-function startStudy(sel, label) {
+function startStudy(sel, label, keys) {
   const valid = new Set(units(papersInDeck(visiblePapers(), S.deck))), scope = [...new Set(sel)].filter((u) => valid.has(u));
-  if (!scope.length) return;
+  if (!scope.length || (keys && !keys.size)) return;
   // 第一次点击里“解锁”声音（iPad/Safari 必须由点击触发）
   if (!player) { player = new Audio(); player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; player.play().catch(() => {}); }
-  S.sess = { sel: scope, label, cur: null, showing: 'q', t0: 0, shownNew: 0, shownRev: 0 };
+  S.sess = { sel: scope, keys, label, cur: null, showing: 'q', t0: 0, shownNew: 0, shownRev: 0 };
   S.view = 'study'; nextStep();
 }
 function nextStep(keep) {
-  const ss = S.sess, q = queueFor(ss.sel);
+  const ss = S.sess, q = queueFor(ss.sel, ss.keys);
   if (!keep) { ss.cur = nextCard(q, ss.shownNew, ss.shownRev); ss.showing = 'q'; ss.t0 = Date.now(); }
   renderStudy(q);
   if (ss.cur && ss.showing === 'q' && !ss.cur.d.presentation) say(ss.cur);
 }
-function undoBar() {
-  return S.undo.length ? `<div class="undo-list">可撤销：${S.undo.slice().reverse().map((u, i) => `<span>${i + 1}. ${esc(u.label)}</span>`).join('')}</div>` : '';
+const undoInScope = (entry) => !S.sess?.keys || S.sess.keys.has(entry.key);
+function undoBar(undos) {
+  return undos.length ? `<div class="undo-list">可撤销：${undos.slice().reverse().map((u, i) => `<span>${i + 1}. ${esc(u.label)}</span>`).join('')}</div>` : '';
 }
 function renderStudy(q) {
   disposeOriginal(); disposeOriginal = () => {};
-  const ss = S.sess; q ||= queueFor(ss.sel); const k = qn(q), c = ss.cur, kd = c ? (c.queue === 0 ? 'n' : c.queue === 2 ? 'r' : 'l') : '';
+  const ss = S.sess; q ||= queueFor(ss.sel, ss.keys); const k = qn(q), c = ss.cur, kd = c ? (c.queue === 0 ? 'n' : c.queue === 2 ? 'r' : 'l') : '';
+  const undos = S.undo.filter(undoInScope);
   const canSuspend = S.learner.self_manage === true;
   const top = `<div class="topbar"><button class="ghost" id="back">← ${S.deck}</button>
       <div class="counts" title="蓝=新词 红=学习中 绿=复习"><span class="n-new ${kd === 'n' ? 'cur' : ''}">${k.n}</span><span class="n-learn ${kd === 'l' ? 'cur' : ''}">${k.l}</span><span class="n-rev ${kd === 'r' ? 'cur' : ''}">${k.r}</span></div>
       <span class="sp"></span>${c ? `<button class="warn" id="sus" ${canSuspend ? 'aria-keyshortcuts="6" title="按 6 暂停这个词，可按 Z 撤销，也可在「管理卡片」里恢复"' : 'disabled title="老师已关闭卡片自主管理"'}>🚫 不再背诵${canSuspend ? '<span class="hide-s" aria-hidden="true">（6）</span>' : ''}</button>` : ''}
-      <button id="undo" ${S.undo.length ? '' : 'disabled'} title="快捷键 Z">↶ 撤销${S.undo.length ? `（还能撤 ${S.undo.length} 步）` : ''}</button></div><div class="study-scope">正在背：${esc(ss.label)}</div>${undoBar()}`;
+      <button id="undo" ${undos.length ? '' : 'disabled'} title="快捷键 Z">↶ 撤销${undos.length ? `（还能撤 ${undos.length} 步）` : ''}</button></div><div class="study-scope">正在背：${esc(ss.label)}</div>${undoBar(undos)}`;
   if (!c) {
-    const nxt = [...S.cards.values()].filter((x) => !x.suspended && x.queue === 1 && unitsOf(x).some((u) => ss.sel.includes(u))).sort((a, b) => a.due - b.due)[0];
+    const sections = new Set(ss.sel);
+    const nxt = [...S.cards.values()].filter((card) => !card.deleted && !card.suspended && card.queue === 1 && matchesScope(card, sections, ss.keys)).sort((a, b) => a.due - b.due)[0];
     const wait = nxt ? Math.max(Math.ceil((nxt.due - now() / 1000) / 60), 1) : 0;
     app.innerHTML = `<div class="wrap">${top}<div class="card empty"><div class="big">🎉</div><h2>这一份今天的学习告一段落</h2>
       <div class="sub">${wait ? `还有学习中的词约 ${wait} 分钟后再出现。` : '可以休息了，也可以返回选另一份。'}</div>
@@ -353,7 +404,7 @@ function renderStudy(q) {
 }
 function showAnswer() { if (!S.sess?.cur) return; S.sess.showing = 'a'; renderStudy(); }
 const newUid = () => (crypto.randomUUID ? crypto.randomUUID() : 'u' + Date.now() + Math.random().toString(16).slice(2));
-function pushUndo(u) { S.undo.push(u); while (S.undo.length > UNDO_MAX) S.undo.shift(); }
+function pushUndo(u) { u.session = S.sess; S.undo.push(u); while (S.undo.length > UNDO_MAX) S.undo.shift(); }
 function onAnswer(ease) {
   const ss = S.sess, c = ss.cur; if (!c || ss.showing !== 'a') return;
   const prev = { ...c };
@@ -377,19 +428,20 @@ function suspendCurrent() {
   nextStep();
 }
 function doUndo() {
-  const u = S.undo.pop(); if (!u) return;
+  const idx = S.undo.findLastIndex(undoInScope); if (idx < 0) return;
+  const [u] = S.undo.splice(idx, 1);
   const c = S.cards.get(u.key); if (!c) return render();
   if (u.kind === 'answer') {
     Object.assign(c, u.prev);
     const i = S.log.map((l) => l.key).lastIndexOf(u.key); if (i >= 0) S.log.splice(i, 1);
-    if (S.sess) { if (u.prev.queue === 0) S.sess.shownNew = Math.max(S.sess.shownNew - 1, 0); else if (u.prev.queue === 2) S.sess.shownRev = Math.max(S.sess.shownRev - 1, 0); }
+    if (S.sess && S.sess === u.session) { if (u.prev.queue === 0) S.sess.shownNew = Math.max(S.sess.shownNew - 1, 0); else if (u.prev.queue === 2) S.sess.shownRev = Math.max(S.sess.shownRev - 1, 0); }
     enqueue({ kind: 'undo', key: u.key, prev: u.prev, uid: u.uid });
   } else {
     c.suspended = u.was;
     enqueue({ kind: 'sus', key: u.key, flag: u.was });
   }
   toast('已撤销：' + u.label);
-  if (S.view === 'study' && S.sess && !c.suspended && S.sess.sel.includes(unitOf(c))) { S.sess.cur = c; S.sess.showing = 'q'; S.sess.t0 = Date.now(); nextStep(true); }
+  if (S.view === 'study' && S.sess && !c.deleted && !c.suspended && matchesScope(c, new Set(S.sess.sel), S.sess.keys)) { S.sess.cur = c; S.sess.showing = 'q'; S.sess.t0 = Date.now(); nextStep(true); }
   else if (S.view === 'study') nextStep();
   else render();
 }
