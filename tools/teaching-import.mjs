@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { readApkg } from './apkg.js';
 import { prepareMapImport } from './map-import.mjs';
-import { COURSES, SOURCE_TYPES, parseFilename, checkTags, tiersFromTags } from '../lib/library-rules.js';
+import { COURSES, SOURCE_TYPES, parseFilename, checkTags, tiersFromTags, mapOfficialVocabulary } from '../lib/library-rules.js';
 const hash = (s) => crypto.createHash('sha1').update(s).digest('hex');
 export { readTeachingNote } from '../lib/teaching-note.js';
 import { readTeachingNote } from '../lib/teaching-note.js';
@@ -11,6 +11,14 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
   const meta = { ...parseFilename(filename), ...options };
   // File identity always comes from the actual filename, never deck names or form overrides.
   Object.assign(meta, parseFilename(filename));
+  const official = mapOfficialVocabulary(meta);
+  if (official) {
+    if (meta.courses != null && !Array.isArray(meta.courses)) throw new Error('适用课程必须是课程名称列表');
+    if (meta.courses?.some((course) => !official.courses.includes(course))) throw new Error('官方词汇的课程应为 MAP 阅读和语言运用，请取消冲突的课程选择');
+    if (meta.sourceType && meta.sourceType !== official.sourceType) throw new Error('官方词汇的来源应为教材／书籍，请取消冲突的来源选择');
+    if (meta.vocabularyType && String(meta.vocabularyType).trim() !== meta.use) throw new Error('官方词汇的用途应为阅读词，请取消冲突的词汇类型选择');
+    Object.assign(meta, { courses: official.courses, sourceType: official.sourceType, supplement: true });
+  }
   const r = await readApkg(file, workDir + '/media', workDir);
   try {
     if (r.mapManifest || r.notes.some((n) => n.tags.includes('MAP协议::v1') && n.tags.some((t) => t.startsWith('MAP科目::')))) {
@@ -25,7 +33,7 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
     if (r.revlog.length || r.cards.some((c) => c.sched.reps || c.sched.type || c.sched.queue > 0)) throw new Error('请导出不含学习进度的新词库包，不能把个人答题记录导入教学词库');
     const paperId = 'teach:' + hash(meta.material.normalize('NFKC').toLowerCase().replace(/[\s_-]+/g, '') + '|' + (meta.edition || '') + '|' + meta.use).slice(0, 24);
     const sectionId = 'part:' + hash(meta.locator).slice(0, 20);
-    const errors = [], cards = [], media = new Set(), guids = new Set(), warnings = new Set();
+    const errors = [], cards = [], media = new Set(), guids = new Set(), warnings = new Set(), ritRanges = new Set();
     const activeNotes = new Set(r.cards.map((c) => c.nid));
     if (grammar) {
       const topics = [...new Set(r.notes.filter((n) => activeNotes.has(n.id)).flatMap((n) => n.tags.filter((t) => t.startsWith('专题::')).map((t) => t.slice(4))))];
@@ -37,11 +45,20 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
       const { sound, ...d } = readTeachingNote(n, model, { use: meta.use });
       d.presentation = makePresentation(n, model, r.cards.filter((c) => c.nid === n.id), r.mediaMap, r.decks);
       d.presentation.media.forEach((name) => media.add(name));
-      const result = checkTags(n.tags, meta, !!options.supplement);
+      const result = checkTags(n.tags, meta, !!meta.supplement);
+      if (official) {
+        const subjectTag = official.subject === 'Reading' ? 'Reading' : 'Language_Usage';
+        const otherTag = official.subject === 'Reading' ? 'Language_Usage' : 'Reading';
+        const bands = n.tags.filter((tag) => tag.startsWith(subjectTag + '::RIT_'));
+        if (!n.tags.includes(subjectTag) || n.tags.some((tag) => tag === otherTag || tag.startsWith(otherTag + '::'))) errors.push(`${d.w || n.id}：官方词汇的科目标签与材料名称不符`);
+        const band = bands.length === 1 && /^.+::RIT_(\d{3}-\d{3})$/.exec(bands[0]);
+        if (!band) errors.push(`${d.w || n.id}：官方词汇须保留一个明确的原始 RIT 分段`);
+        else ritRanges.add(band[1]);
+      }
       result.warnings.forEach((warning) => warnings.add(warning));
       if (!n.guid || guids.has(n.guid)) errors.push(`笔记 ${n.id}：缺少或重复的固定编号`);
       guids.add(n.guid);
-      if (!d.w || !d.mean) errors.push(`笔记 ${n.id}：缺少单词或释义（支持 Word/Meaning 等字段或现有阅读词 Front/Back 模板）`);
+      if (!d.w || !d.mean) errors.push(`笔记 ${n.id}：缺少单词或释义（支持 Word/Meaning、Term/Concept 词汇及现有阅读词 Front/Back 模板）`);
       if (result.errors.length) errors.push(`${d.w || n.id}：${result.errors.join('；')}`);
       const snd = sound;
       if (snd) {
@@ -60,8 +77,8 @@ export async function prepareTeachingImport(file, filename, options, workDir) {
     return {
       file: filename, fingerprint: hash(fs.readFileSync(file)), cards, media: [...media], warnings: [...warnings],
       paper: { paper_id: paperId, bank: meta.use, name: meta.material.replace(/-/g, ' '), sort: 0,
-        sections: [{ id: sectionId, label: [meta.locator, meta.title].filter(Boolean).join(' · '), board: meta.locator, piece: meta.title, level: '', tiers, sort: 0, count: cards.length, tags: [meta.material.replace(/-/g, ' '), meta.locator] }],
-        source: { schema: 1, courses: meta.courses, sourceType: meta.sourceType, edition: String(meta.edition || '').trim(), materialSlug: meta.material, filename, batch: meta.batch, version: meta.version, tiers, tagsSupplemented: !!options.supplement, ...(grammar ? { grammar_schema: 'grammar-bank-v1', topic: meta.topic } : {}) } },
+        sections: [{ id: sectionId, label: [meta.locator, meta.title].filter(Boolean).join(' · '), board: meta.locator, piece: meta.title, level: '', tiers, sort: 0, count: cards.length, tags: [meta.material.replace(/-/g, ' '), meta.locator, ...[...ritRanges].sort().map((range) => 'RIT_' + range)] }],
+        source: { schema: 1, courses: meta.courses, sourceType: meta.sourceType, edition: String(meta.edition || '').trim(), materialSlug: meta.material, filename, batch: meta.batch, version: meta.version, tiers, tagsSupplemented: !!meta.supplement, ...(official ? { officialVocabulary: { schema: 'map-official-vocab-v1', subject: official.subject, ritRanges: [...ritRanges].sort() } } : {}), ...(grammar ? { grammar_schema: 'grammar-bank-v1', topic: meta.topic } : {}) } },
     };
   } finally { r.cleanup(); }
 }
